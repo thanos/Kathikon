@@ -77,26 +77,31 @@ defmodule Kathikon do
   """
   @spec cancel(String.t()) :: {:ok, Job.t()} | {:error, term()}
   def cancel(job_id) when is_binary(job_id) do
-    with {:ok, job} <- Storage.fetch(job_id) do
-      if job.state in [:completed, :cancelled, :discarded] do
-        {:error, {:invalid_state, job.state}}
-      else
-        if job.state == :executing do
-          {:error, :executing}
-        else
-          now = DateTime.utc_now()
-          job = %{job | state: :cancelled, cancelled_at: now}
+    with {:ok, job} <- Storage.fetch(job_id),
+         :ok <- validate_cancellable(job) do
+      cancel_job(job)
+    end
+  end
 
-          with {:ok, job} <- Storage.update(job) do
-            Telemetry.event([:job, :cancel], %{}, %{
-              queue: job.queue,
-              job_id: job.id
-            })
+  defp validate_cancellable(%Job{state: state})
+       when state in [:completed, :cancelled, :discarded] do
+    {:error, {:invalid_state, state}}
+  end
 
-            {:ok, job}
-          end
-        end
-      end
+  defp validate_cancellable(%Job{state: :executing}), do: {:error, :executing}
+  defp validate_cancellable(%Job{}), do: :ok
+
+  defp cancel_job(job) do
+    now = DateTime.utc_now()
+    job = %{job | state: :cancelled, cancelled_at: now}
+
+    with {:ok, job} <- Storage.update(job) do
+      Telemetry.event([:job, :cancel], %{}, %{
+        queue: job.queue,
+        job_id: job.id
+      })
+
+      {:ok, job}
     end
   end
 

@@ -30,7 +30,43 @@ defmodule Kathikon.TestSupport do
     end
   end
 
+  def stub_storage_defaults! do
+    test_pid = self()
+
+    Mox.stub(Kathikon.Storage.Mock, :claim, fn _, _ -> :not_found end)
+
+    Mox.stub(Kathikon.Storage.Mock, :update, fn job ->
+      {:ok, job}
+    end)
+
+    Mox.stub(Kathikon.Storage.Mock, :insert, fn job ->
+      {:ok, job}
+    end)
+
+    Mox.stub(Kathikon.Storage.Mock, :fetch, fn _ ->
+      {:error, :not_found}
+    end)
+
+    Mox.stub(Kathikon.Storage.Mock, :promote_scheduled, fn _ -> 0 end)
+    Mox.stub(Kathikon.Storage.Mock, :prunable_jobs, fn _ -> [] end)
+    Mox.stub(Kathikon.Storage.Mock, :delete, fn _ -> :ok end)
+    Mox.stub(Kathikon.Storage.Mock, :all, fn -> [] end)
+    Mox.stub(Kathikon.Storage.Mock, :register_queue, fn _, _ -> :ok end)
+
+    for queue <- Kathikon.Config.queue_names() do
+      case Registry.lookup(Kathikon.Registry, {:dispatcher, queue}) do
+        [{pid, _}] -> Mox.allow(Kathikon.Storage.Mock, test_pid, pid)
+        [] -> :ok
+      end
+    end
+
+    for name <- [Kathikon.Scheduler, Kathikon.Pruner] do
+      if pid = Process.whereis(name), do: Mox.allow(Kathikon.Storage.Mock, test_pid, pid)
+    end
+  end
+
   def reset! do
+    Kathikon.Storage.backend(Kathikon.Storage.Mnesia)
     Kathikon.Mnesia.clear_jobs!()
     Process.sleep(100)
     Kathikon.Mnesia.clear_jobs!()

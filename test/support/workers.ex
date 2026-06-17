@@ -3,9 +3,7 @@ defmodule Kathikon.Workers.SuccessWorker do
   use Kathikon.Worker
 
   @impl true
-  def perform(_job) do
-    :ok
-  end
+  def perform(_job), do: :ok
 end
 
 defmodule Kathikon.Workers.FailWorker do
@@ -13,9 +11,7 @@ defmodule Kathikon.Workers.FailWorker do
   use Kathikon.Worker
 
   @impl true
-  def perform(_job) do
-    {:error, :failed}
-  end
+  def perform(_job), do: {:error, :failed}
 end
 
 defmodule Kathikon.Workers.CountingWorker do
@@ -41,4 +37,28 @@ defmodule Kathikon.Workers.PriorityWorker do
     Kathikon.TestSupport.record_order(job.args["label"])
     :ok
   end
+end
+
+defmodule Kathikon.Workers.RaiseWorker do
+  @moduledoc false
+  use Kathikon.Worker
+
+  @impl true
+  def perform(_job), do: raise("boom")
+end
+
+defmodule Kathikon.Workers.ThrowWorker do
+  @moduledoc false
+  use Kathikon.Worker
+
+  @impl true
+  def perform(_job), do: throw(:thrown)
+end
+
+defmodule Kathikon.Workers.ExitWorker do
+  @moduledoc false
+  use Kathikon.Worker
+
+  @impl true
+  def perform(_job), do: exit(:shutdown)
 end

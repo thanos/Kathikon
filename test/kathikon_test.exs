@@ -28,30 +28,35 @@ defmodule Kathikon.JobTest do
     assert job.scheduled_at == at
   end
 
+  test "build uses available state for schedule_at in the past" do
+    at = DateTime.add(DateTime.utc_now(), -10, :second)
+    job = Job.build(Kathikon.Workers.SuccessWorker, %{}, schedule_at: at)
+
+    assert job.state == :available
+  end
+
   test "backoff grows with attempts" do
     assert Job.backoff_seconds(1) == 5
     assert Job.backoff_seconds(2) == 20
     assert Job.backoff_seconds(3) == 45
   end
 
-  test "claim prefers higher priority jobs" do
+  test "claimable? respects state and available_at" do
     now = DateTime.utc_now()
+    future = DateTime.add(now, 60, :second)
 
-    low =
-      Job.build(Kathikon.Workers.SuccessWorker, %{}, queue: :default, priority: 1)
+    available =
+      Job.build(Kathikon.Workers.SuccessWorker, %{}, [])
       |> Map.put(:state, :available)
       |> Map.put(:available_at, now)
 
-    high =
-      Job.build(Kathikon.Workers.SuccessWorker, %{}, queue: :default, priority: 10)
+    scheduled =
+      Job.build(Kathikon.Workers.SuccessWorker, %{}, [])
       |> Map.put(:state, :available)
-      |> Map.put(:available_at, now)
+      |> Map.put(:available_at, future)
 
-    {:ok, _} = Kathikon.Storage.insert(low)
-    {:ok, _} = Kathikon.Storage.insert(high)
-
-    assert {:ok, claimed} = Kathikon.Storage.claim(:default, now)
-    assert claimed.priority == 10
+    assert Job.claimable?(available, now)
+    refute Job.claimable?(scheduled, now)
   end
 end
 
@@ -133,6 +138,13 @@ defmodule Kathikon.IntegrationTest do
     assert job.state == :scheduled
     assert {:ok, completed} = TestSupport.await_state(job.id, :completed, 10_000)
     assert completed.state == :completed
+  end
+
+  test "start_queue ensures a dispatcher" do
+    queue = :"integration_#{System.unique_integer([:positive])}"
+    assert :ok = Kathikon.start_queue(queue)
+
+    assert [{_pid, _}] = Registry.lookup(Kathikon.Registry, {:dispatcher, queue})
   end
 
   test "pruner removes old terminal jobs" do

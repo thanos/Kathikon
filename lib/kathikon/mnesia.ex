@@ -7,6 +7,7 @@ defmodule Kathikon.Mnesia do
   """
 
   @tables [:kathikon_jobs, :kathikon_queues]
+  @backend_key :mnesia_backend
 
   @doc """
   Ensures the Mnesia schema and tables exist on the current node.
@@ -24,7 +25,7 @@ defmodule Kathikon.Mnesia do
   @spec clear_jobs!() :: :ok
   def clear_jobs! do
     if table_exists?(:kathikon_jobs) do
-      :mnesia.clear_table(:kathikon_jobs)
+      backend().clear_table(:kathikon_jobs)
     end
 
     :ok
@@ -35,14 +36,7 @@ defmodule Kathikon.Mnesia do
   """
   @spec reset!() :: :ok
   def reset! do
-    if :mnesia.system_info(:is_running) == :yes do
-      for table <- @tables do
-        if table_exists?(table) do
-          :mnesia.delete_table(table)
-        end
-      end
-    end
-
+    delete_existing_tables()
     setup()
     :ok
   end
@@ -50,20 +44,36 @@ defmodule Kathikon.Mnesia do
   @doc false
   def tables, do: @tables
 
+  @doc false
+  @spec backend() :: module()
+  def backend do
+    Application.get_env(:kathikon, @backend_key, Kathikon.Mnesia.Erlang)
+  end
+
+  defp delete_existing_tables do
+    if mnesia_running?(), do: Enum.each(@tables, &delete_table_if_exists/1)
+  end
+
+  defp mnesia_running?, do: backend().system_info(:is_running) == :yes
+
+  defp delete_table_if_exists(table) do
+    if table_exists?(table), do: backend().delete_table(table)
+  end
+
   defp ensure_schema do
-    case :mnesia.system_info(:is_running) do
+    case backend().system_info(:is_running) do
       :yes ->
         :ok
 
       :no ->
-        :mnesia.start()
+        backend().start()
 
       :stopping ->
-        :mnesia.stop()
-        :mnesia.start()
+        backend().stop()
+        backend().start()
     end
 
-    case :mnesia.create_schema([node()]) do
+    case backend().create_schema([node()]) do
       :ok -> :ok
       {:error, {_, {:already_exists, _}}} -> :ok
       {:error, {:already_exists, _}} -> :ok
@@ -76,7 +86,7 @@ defmodule Kathikon.Mnesia do
       create_table(table)
     end
 
-    case :mnesia.wait_for_tables(@tables, 5_000) do
+    case backend().wait_for_tables(@tables, 5_000) do
       :ok ->
         :ok
 
@@ -115,7 +125,7 @@ defmodule Kathikon.Mnesia do
     if table_exists?(table) do
       :ok
     else
-      case :mnesia.create_table(table, opts) do
+      case backend().create_table(table, opts) do
         {:ok, _} -> :ok
         {:atomic, :ok} -> :ok
         :ok -> :ok
@@ -126,6 +136,6 @@ defmodule Kathikon.Mnesia do
   end
 
   defp table_exists?(table) do
-    :mnesia.system_info(:tables) |> Enum.member?(table)
+    backend().system_info(:tables) |> Enum.member?(table)
   end
 end

@@ -2,9 +2,13 @@ defmodule Kathikon.Dispatcher do
   @moduledoc """
   Claims and executes jobs for a single queue.
 
-  The dispatcher polls Mnesia for available jobs and spawns tasks up to the
-  queue's concurrency limit. Each job is executed inside the worker module's
-  `perform/1` callback.
+  One dispatcher runs per queue under `Kathikon.Queue`. It polls Mnesia on
+  `poll_interval`, atomically claims jobs, and spawns `Task`s up to the
+  configured `concurrency`.
+
+  Registered in `Kathikon.Registry` as `{:dispatcher, queue}`.
+
+  See `docs/guides/queues-and-concurrency.md`.
   """
 
   use GenServer
@@ -124,11 +128,12 @@ defmodule Kathikon.Dispatcher do
   @impl true
   def handle_cast({:job_finished, job, result, duration}, state) do
     now = DateTime.utc_now()
-    attempt = job.attempts + 1
 
-    {updated, event_suffix, extra_metadata} =
+    {updated, event_suffix, extra_metadata, attempt} =
       case result do
         :ok ->
+          attempt = job.attempts + 1
+
           job = %{
             job
             | state: :completed,
@@ -136,10 +141,33 @@ defmodule Kathikon.Dispatcher do
               completed_at: now
           }
 
-          {job, [:job, :stop], %{result: :ok}}
+          {job, [:job, :stop], %{result: :ok}, attempt}
+
+        {:sleep, seconds} when is_integer(seconds) and seconds > 0 ->
+          at = DateTime.add(now, seconds, :second)
+
+          job = %{
+            job
+            | state: :scheduled,
+              scheduled_at: at,
+              available_at: at,
+              started_at: nil
+          }
+
+          {job, [:job, :sleep], %{result: :sleep, seconds: seconds}, job.attempts}
+
+        {:sleep, invalid} ->
+          attempt = job.attempts + 1
+
+          {updated, event_suffix, extra_metadata} =
+            handle_failure(job, attempt, {:invalid_sleep, invalid}, now)
+
+          {updated, event_suffix, extra_metadata, attempt}
 
         {:error, reason} ->
-          handle_failure(job, attempt, reason, now)
+          attempt = job.attempts + 1
+          {job, event_suffix, extra_metadata} = handle_failure(job, attempt, reason, now)
+          {job, event_suffix, extra_metadata, attempt}
       end
 
     Storage.update(updated)

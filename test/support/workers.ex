@@ -39,6 +39,16 @@ defmodule Kathikon.Workers.PriorityWorker do
   end
 end
 
+defmodule Kathikon.Workers.SleepWorker do
+  @moduledoc false
+  use Kathikon.Worker
+
+  @impl true
+  def perform(job) do
+    {:sleep, job.args["seconds"] || 30}
+  end
+end
+
 defmodule Kathikon.Workers.RaiseWorker do
   @moduledoc false
   use Kathikon.Worker

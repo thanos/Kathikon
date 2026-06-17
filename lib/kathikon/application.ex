@@ -1,5 +1,10 @@
 defmodule Kathikon.Application do
-  @moduledoc false
+  @moduledoc """
+  OTP application callback for Kathikon.
+
+  On boot: calls `Kathikon.Storage.setup/0`, starts the supervision tree
+  (Registry, Queue, Scheduler, Pruner), and `Kathikon.Queue.start_configured/0`.
+  """
 
   use Application
 

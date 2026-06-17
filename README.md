@@ -131,6 +131,7 @@ Kathikon.Telemetry.attach_default_logger()
 | `:prune_interval` | `60000` | Pruner tick interval (ms) |
 | `:retention_period` | `7 days` | How long to keep terminal jobs (ms) |
 | `:max_attempts` | `20` | Default retry limit |
+| `:mnesia_copies` | `:auto` | Mnesia storage: `:ram`, `:disc`, or `:auto` (`ram` on `nonode@nohost` and Livebook nodes) |
 
 ## Roadmap
 
@@ -147,10 +148,21 @@ Kathikon.Telemetry.attach_default_logger()
 
 ## Documentation
 
+Generate HTML docs with [ExDoc](https://github.com/elixir-lang/ex_doc):
+
+```bash
+mix docs
+open doc/index.html
+```
+
+- **[Documentation index](docs/documentation.md)** — guides and module reference (source)
+- [Quick start](docs/guides/quick-start.md)
+- [Module reference](docs/reference/modules.md)
+- [Configuration](docs/guides/configuration.md)
+- [Interactive demo (Livebook)](livebooks/kathikon_demo.livemd)
 - [Phase 1 implementation plan](plans/phase-1.md)
 - [Phase 1 concepts](docs/phase-1-concepts.md)
 - [Phase 1 operations](docs/phase-1-operations.md)
-- [Phase 1 blog draft](docs/phase-1-blog.md)
 
 ## License
 

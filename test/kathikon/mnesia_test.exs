@@ -17,6 +17,13 @@ defmodule Kathikon.ConfigTest do
     assert Config.queue_config(:unknown) == [concurrency: 10]
     assert Config.concurrency(:unknown) == 10
   end
+
+  test "mnesia_copies respects explicit config" do
+    Application.put_env(:kathikon, :mnesia_copies, :disc)
+    assert Config.mnesia_copies() == :disc
+
+    on_exit(fn -> Application.delete_env(:kathikon, :mnesia_copies) end)
+  end
 end
 
 defmodule Kathikon.Backend.Storage.LifecycleTest do

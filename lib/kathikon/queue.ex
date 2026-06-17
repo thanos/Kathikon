@@ -1,9 +1,16 @@
 defmodule Kathikon.Queue do
   @moduledoc """
-  Queue registration and dispatcher lifecycle management.
+  Queue registration and dispatcher lifecycle.
 
-  Each queue has a dedicated dispatcher process that claims and executes jobs
-  up to the configured concurrency limit.
+  A `DynamicSupervisor` that starts one `Kathikon.Dispatcher` per queue.
+  `start_configured/0` runs at application boot; `ensure_started/1` is
+  called on each `Kathikon.insert/3`.
+
+  ## Example
+
+      :ok = Kathikon.Queue.ensure_started(:emails)
+
+  See `docs/guides/queues-and-concurrency.md`.
   """
 
   use DynamicSupervisor

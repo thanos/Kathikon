@@ -2,8 +2,20 @@ defmodule Kathikon.Storage do
   @moduledoc """
   Storage facade for job persistence and Mnesia lifecycle.
 
-  Runtime code delegates to the configured `Kathikon.Backend.Storage`
-  implementation (default: `Kathikon.Backend.Storage.Mnesia`).
+  Delegates to `Kathikon.Backend.Storage` (default: `Kathikon.Backend.Storage.Mnesia`).
+  Application code should prefer `Kathikon.insert/3` over calling `Storage` directly.
+
+  ## Embedding
+
+      {:ok, _} = Application.ensure_all_started(:kathikon)
+      :ok = Kathikon.Storage.setup()
+
+  ## Tests
+
+      Kathikon.Storage.clear_jobs!()
+      Kathikon.Storage.reset!()
+
+  See `docs/guides/storage-and-embedding.md`.
   """
 
   alias Kathikon.Job

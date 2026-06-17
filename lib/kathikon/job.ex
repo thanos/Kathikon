@@ -4,13 +4,23 @@ defmodule Kathikon.Job do
 
   Jobs move through explicit states:
 
-    * `:scheduled` — waiting until `scheduled_at`
-    * `:available` — ready for a worker to claim
+    * `:scheduled` — waiting until `scheduled_at` (enqueue delay or `{:sleep, seconds}`)
+    * `:available` — ready for a dispatcher to claim
     * `:executing` — currently being processed
     * `:retryable` — failed but will be retried after backoff
     * `:completed` — successfully finished
     * `:cancelled` — explicitly cancelled
     * `:discarded` — exhausted retries or permanently failed
+
+  ## Example
+
+      {:ok, job} = Kathikon.insert(MyWorker, %{"key" => "value"})
+      job.id
+      job.state       # :available
+      job.worker      # MyWorker
+      job.args        # %{"key" => "value"}
+
+  See `docs/guides/workers.md` and `docs/reference/modules.md`.
   """
 
   @enforce_keys [:id, :queue, :worker, :args, :state]
@@ -72,6 +82,19 @@ defmodule Kathikon.Job do
 
   @doc """
   Builds a new job from worker module, args, and options.
+
+  Prefer `Kathikon.insert/3` for enqueueing — it persists the job and
+  starts the queue dispatcher.
+
+  ## Options
+
+  Same as `Kathikon.insert/3`: `:queue`, `:priority`, `:max_attempts`,
+  `:schedule_in`, `:schedule_at`.
+
+  ## Example
+
+      job = Kathikon.Job.build(MyWorker, %{"x" => 1}, queue: :default)
+      job.state  # :available
   """
   @spec build(module(), map(), keyword()) :: t()
   def build(worker, args, opts) do
@@ -99,7 +122,18 @@ defmodule Kathikon.Job do
   end
 
   @doc """
-  Returns true when the job can be claimed for execution.
+  Returns true when the job can be claimed for execution at `now`.
+
+  A job is claimable when its state is `:available` or `:retryable` and
+  `available_at` is not in the future.
+
+  ## Example
+
+      job = Kathikon.Job.build(MyWorker, %{}, schedule_in: 60)
+      Kathikon.Job.claimable?(job, DateTime.utc_now())  # false
+
+      {:ok, job} = Kathikon.fetch(job_id)
+      Kathikon.Job.claimable?(job, DateTime.utc_now())  # true when due
   """
   @spec claimable?(t(), DateTime.t()) :: boolean()
   def claimable?(%__MODULE__{state: state, available_at: available_at}, now) do
@@ -108,6 +142,14 @@ defmodule Kathikon.Job do
 
   @doc """
   Computes exponential backoff in seconds for the given attempt number.
+
+  Formula: `min(attempt² × 5, 86400)` seconds (minimum 1 for attempt ≤ 0).
+
+  ## Examples
+
+      Kathikon.Job.backoff_seconds(1)  # 5
+      Kathikon.Job.backoff_seconds(2)  # 20
+      Kathikon.Job.backoff_seconds(3)  # 45
   """
   @spec backoff_seconds(non_neg_integer()) :: non_neg_integer()
   def backoff_seconds(attempt) when attempt <= 0, do: 1

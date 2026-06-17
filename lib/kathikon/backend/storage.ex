@@ -1,5 +1,10 @@
 defmodule Kathikon.Backend.Storage do
-  @moduledoc false
+  @moduledoc """
+  Storage behaviour for job persistence.
+
+  Configure the implementation via `config :kathikon, storage_backend: module`.
+  Phase 1 ships `Kathikon.Backend.Storage.Mnesia`.
+  """
 
   alias Kathikon.Job
 

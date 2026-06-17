@@ -1,10 +1,11 @@
 defmodule Kathikon.Scheduler do
   @moduledoc """
-  Promotes scheduled jobs to the available state when their time arrives.
+  Promotes scheduled jobs to `:available` when their time arrives.
 
-  Jobs inserted with `schedule_at` or `schedule_in` begin in `:scheduled`.
-  The scheduler periodically scans for jobs whose `scheduled_at` has passed
-  and transitions them to `:available`.
+  Ticks every `scheduler_interval` ms. Promotion runs in a single Mnesia
+  transaction via `Storage.promote_scheduled/1`.
+
+  See `docs/guides/scheduling.md`.
   """
 
   use GenServer

@@ -2,7 +2,26 @@ defmodule Kathikon.Config do
   @moduledoc """
   Runtime configuration for Kathikon.
 
-  Configure via `config :kathikon, ...` in your application.
+  Configure via `config :kathikon, ...` in `config/config.exs`.
+
+  ## Example
+
+      config :kathikon,
+        queues: [default: [concurrency: 10], emails: [concurrency: 5]],
+        poll_interval: 200,
+        scheduler_interval: 1_000,
+        prune_interval: 60_000,
+        retention_period: :timer.hours(24 * 7),
+        max_attempts: 20,
+        mnesia_copies: :auto
+
+  ## Reading at runtime
+
+      Kathikon.Config.concurrency(:emails)
+      Kathikon.Config.poll_interval()
+      Kathikon.Config.mnesia_copies()
+
+  See `docs/guides/configuration.md`.
   """
 
   @default_queues [default: [concurrency: 10]]
@@ -35,6 +54,27 @@ defmodule Kathikon.Config do
   def retention_period, do: get(:retention_period, @default_retention_period)
 
   def max_attempts, do: get(:max_attempts, @default_max_attempts)
+
+  @doc """
+  Mnesia table copy type: `:ram` or `:disc`.
+
+  Defaults to `:auto` — `ram` on `nonode@nohost` and Livebook nodes,
+  `disc` on other named nodes.
+  """
+  def mnesia_copies do
+    case get(:mnesia_copies, :auto) do
+      :auto -> auto_mnesia_copies()
+      mode when mode in [:ram, :disc] -> mode
+    end
+  end
+
+  defp auto_mnesia_copies do
+    if node() == :nonode@nohost or livebook_node?(), do: :ram, else: :disc
+  end
+
+  defp livebook_node? do
+    node() |> Atom.to_string() |> String.contains?("livebook")
+  end
 
   defp get(key, default) do
     Application.get_env(:kathikon, key, default)

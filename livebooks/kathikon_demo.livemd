@@ -1,0 +1,365 @@
+# Kathikon Demo
+
+## Intro
+
+**Kathikon** is a BEAM-native durable job queue. Jobs live in Mnesia and run through explicit states: `scheduled → available → executing → completed | retryable | discarded | cancelled`.
+
+Run the setup cells top-to-bottom, then try each demo section.
+
+## Setup
+
+### Install & configure
+
+Livebook runs on a named node without a Mnesia disc directory — use `mnesia_copies: :ram` (also auto-detected when the node name contains `livebook`).
+
+```elixir
+Mix.install(
+  [
+    {:kathikon, path: Path.expand("..", __DIR__), env: :dev},
+    {:kino, "~> 0.19.0"},
+    {:kino_vega_lite, "~> 0.1.11"}
+  ],
+  config: [
+    kathikon: [
+      mnesia_copies: :ram,
+      poll_interval: 150,
+      scheduler_interval: 400,
+      prune_interval: 2_000,
+      retention_period: 3_000,
+      max_attempts: 3,
+      queues: [
+        default: [concurrency: 2],
+        emails: [concurrency: 1],
+        priority: [concurrency: 1]
+      ]
+    ]
+  ]
+)
+```
+
+### Reset demo jobs
+
+`Mix.install` starts Kathikon (and Mnesia) automatically.
+
+```elixir
+:ok = Kathikon.Storage.clear_jobs!()
+```
+
+### Activity log
+
+```elixir
+defmodule Demo.Log do
+  @name __MODULE__
+
+  def start, do: Agent.start_link(fn -> [] end, name: @name)
+  def append(line), do: Agent.update(@name, &(&1 ++ [line]))
+  def entries, do: Agent.get(@name, & &1)
+  def clear, do: Agent.update(@name, fn _ -> [] end)
+end
+
+{:ok, _} = Demo.Log.start()
+```
+
+### Helpers
+
+```elixir
+defmodule Demo do
+  def await(job_id, state, timeout \\ 10_000) do
+    deadline = System.monotonic_time(:millisecond) + timeout
+    poll(job_id, state, deadline)
+  end
+
+  defp poll(job_id, state, deadline) do
+    case Kathikon.fetch(job_id) do
+      {:ok, %{state: ^state} = job} ->
+        {:ok, job}
+
+      {:ok, _} ->
+        if System.monotonic_time(:millisecond) > deadline do
+          {:error, :timeout}
+        else
+          Process.sleep(100)
+          poll(job_id, state, deadline)
+        end
+
+      other ->
+        other
+    end
+  end
+
+  def job_table(jobs) do
+    jobs
+    |> Enum.map(fn j ->
+      %{
+        id: String.slice(j.id, 0, 8),
+        queue: j.queue,
+        state: j.state,
+        attempts: j.attempts,
+        priority: j.priority
+      }
+    end)
+    |> Kino.DataTable.new()
+  end
+
+  def dispatcher(queue) do
+    GenServer.whereis({:via, Registry, {Kathikon.Registry, {:dispatcher, queue}}})
+  end
+end
+```
+
+## Workers
+
+### SendEmailWorker
+
+```elixir
+defmodule Demo.SendEmailWorker do
+  use Kathikon.Worker
+
+  @impl true
+  def perform(%{args: %{"to" => to, "subject" => subject}}) do
+    Process.sleep(250)
+    Demo.Log.append("Sent \"#{subject}\" to #{to}")
+    :ok
+  end
+end
+```
+
+### FlakyPaymentWorker
+
+Fails once, then succeeds — shows retries.
+
+```elixir
+defmodule Demo.FlakyPaymentWorker do
+  use Kathikon.Worker
+
+  @impl true
+  def perform(job) do
+    if job.attempts + 1 >= 2 do
+      Demo.Log.append("Payment captured")
+      :ok
+    else
+      Demo.Log.append("Payment gateway timeout")
+      {:error, :timeout}
+    end
+  end
+end
+```
+
+### AlwaysFailWorker
+
+```elixir
+defmodule Demo.AlwaysFailWorker do
+  use Kathikon.Worker
+
+  @impl true
+  def perform(_job), do: {:error, :declined}
+end
+```
+
+### ThumbnailWorker
+
+Slow jobs — good for watching concurrency.
+
+```elixir
+defmodule Demo.ThumbnailWorker do
+  use Kathikon.Worker
+
+  @impl true
+  def perform(%{args: %{"asset" => asset}}) do
+    Demo.Log.append("Thumbnail started: #{asset}")
+    Process.sleep(600)
+    Demo.Log.append("Thumbnail done: #{asset}")
+    :ok
+  end
+end
+```
+
+### FlashSaleWorker
+
+```elixir
+defmodule Demo.FlashSaleWorker do
+  use Kathikon.Worker
+
+  @impl true
+  def perform(%{args: %{"label" => label}}) do
+    Demo.Log.append("Flash sale: #{label}")
+    :ok
+  end
+end
+```
+
+---
+
+## Example scenarios
+
+| Scenario              | Worker               | Features         |
+| --------------------- | -------------------- | ---------------- |
+| Welcome email ✅     | `SendEmailWorker`    | insert, execute  |
+| Email queue ✅       | `SendEmailWorker`    | `queue: :emails` |
+| Weekly digest ✅     | `SendEmailWorker`    | `schedule_in`    |
+| Flash sale ✅        | `FlashSaleWorker`    | `priority`       |
+| Payment retry ✅     | `FlakyPaymentWorker` | backoff          |
+| Dead letter ✅       | `AlwaysFailWorker`   | `max_attempts`   |
+| Cancel newsletter ✅ | `SendEmailWorker`    | `cancel/1`       |
+| Thumbnails ✅        | `ThumbnailWorker`    | concurrency      |
+
+---
+
+## 1. Welcome email
+
+```elixir
+Demo.Log.clear()
+
+{:ok, job} =
+  Kathikon.insert(Demo.SendEmailWorker, %{
+    "to" => "ada@example.com",
+    "subject" => "Welcome"
+  })
+
+{:ok, done} = Demo.await(job.id, :completed)
+{job.state, done.attempts}
+```
+
+```elixir
+Demo.job_table(Kathikon.all())
+```
+
+## 2. Dedicated email queue
+
+```elixir
+:ok = Kathikon.start_queue(:emails)
+
+{:ok, job} =
+  Kathikon.insert(
+    Demo.SendEmailWorker,
+    %{"to" => "grace@example.com", "subject" => "Password reset"},
+    queue: :emails
+  )
+
+Demo.await(job.id, :completed)
+```
+
+## 3. Scheduled digest
+
+Insert, wait for the scheduler to promote, then wait for completion — all in one cell so `job` stays in scope.
+
+```elixir
+{:ok, job} =
+  Kathikon.insert(
+    Demo.SendEmailWorker,
+    %{"to" => "linus@example.com", "subject" => "Weekly digest"},
+    schedule_in: 3
+  )
+
+IO.inspect(job.state, label: "initial")
+
+Process.sleep(500)
+
+case Kathikon.fetch(job.id) do
+  {:ok, promoted} ->
+    IO.inspect(promoted.state, label: "after scheduler tick")
+    Demo.await(job.id, :completed)
+
+  {:error, :not_found} ->
+    {:error, :not_found}
+end
+```
+
+## 4. Flash sale priority
+
+```elixir
+:ok = Kathikon.start_queue(:priority)
+Demo.Log.clear()
+
+for {label, pri} <- [{"VIP", 10}, {"General", 1}] do
+  Kathikon.insert(Demo.FlashSaleWorker, %{"label" => label},
+    queue: :priority,
+    priority: pri,
+    schedule_in: 1
+  )
+end
+
+Process.sleep(1_500)
+Demo.Log.entries()
+```
+
+## 5. Payment retry
+
+~5 seconds between attempts (exponential backoff).
+
+```elixir
+Demo.Log.clear()
+
+{:ok, job} =
+  Kathikon.insert(Demo.FlakyPaymentWorker, %{"invoice" => "INV-42"}, max_attempts: 3)
+
+{:ok, done} = Demo.await(job.id, :completed, 20_000)
+{done.attempts, done.errors}
+```
+
+## 6. Discard
+
+```elixir
+{:ok, job} =
+  Kathikon.insert(Demo.AlwaysFailWorker, %{"card" => "4111"}, max_attempts: 2)
+
+{:ok, done} = Demo.await(job.id, :discarded, 25_000)
+{done.state, done.errors}
+```
+
+## 7. Cancel
+
+```elixir
+{:ok, job} =
+  Kathikon.insert(
+    Demo.SendEmailWorker,
+    %{"to" => "unsub@example.com", "subject" => "Newsletter"},
+    schedule_in: 60
+  )
+
+{:ok, cancelled} = Kathikon.cancel(job.id)
+Kathikon.cancel(job.id)
+```
+
+## 8. Concurrency
+
+```elixir
+Demo.Log.clear()
+
+for asset <- ["a.png", "b.png", "c.png"] do
+  Kathikon.insert(Demo.ThumbnailWorker, %{"asset" => asset})
+end
+
+Process.sleep(2_500)
+Demo.Log.entries()
+```
+
+## 9. Pruning
+
+Terminal jobs are removed after `retention_period` (3s here).
+
+```elixir
+{:ok, job} =
+  Kathikon.insert(Demo.SendEmailWorker, %{"to" => "x@y.com", "subject" => "Temp"})
+
+{:ok, _} = Demo.await(job.id, :completed)
+Process.sleep(6_000)
+Kathikon.fetch(job.id)
+```
+
+## 10. Inspect jobs
+
+```elixir
+Demo.job_table(Kathikon.all())
+```
+
+```elixir
+Kathikon.all() |> Enum.frequencies_by(& &1.state)
+```
+
+## Cleanup
+
+```elixir
+Kathikon.Storage.clear_jobs!()
+Demo.Log.clear()
+```

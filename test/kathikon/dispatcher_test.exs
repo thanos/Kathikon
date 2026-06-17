@@ -94,6 +94,38 @@ defmodule Kathikon.DispatcherTest do
     Process.sleep(100)
   end
 
+  test "defers jobs via {:sleep, seconds}", %{dispatcher: dispatcher, queue: queue} do
+    work = job(Kathikon.Workers.SleepWorker, %{"seconds" => 60}, queue: queue)
+
+    Mox.expect(Kathikon.Backend.Storage.Mock, :claim, fn ^queue, _ -> {:ok, work} end)
+
+    Mox.expect(Kathikon.Backend.Storage.Mock, :update, fn updated ->
+      assert updated.state == :scheduled
+      assert updated.attempts == 0
+      assert updated.errors == []
+      assert DateTime.diff(updated.scheduled_at, DateTime.utc_now(), :second) in 59..60
+      {:ok, updated}
+    end)
+
+    send(dispatcher, :poll)
+    Process.sleep(100)
+  end
+
+  test "treats invalid {:sleep, seconds} as failure", %{dispatcher: dispatcher, queue: queue} do
+    work = job(Kathikon.Workers.SleepWorker, %{"seconds" => 0}, queue: queue)
+
+    Mox.expect(Kathikon.Backend.Storage.Mock, :claim, fn ^queue, _ -> {:ok, work} end)
+
+    Mox.expect(Kathikon.Backend.Storage.Mock, :update, fn updated ->
+      assert updated.state == :retryable
+      assert hd(updated.errors).reason =~ "invalid_sleep"
+      {:ok, updated}
+    end)
+
+    send(dispatcher, :poll)
+    Process.sleep(100)
+  end
+
   test "handles worker throws", %{dispatcher: dispatcher, queue: queue} do
     work = job(Kathikon.Workers.ThrowWorker, %{}, queue: queue)
 

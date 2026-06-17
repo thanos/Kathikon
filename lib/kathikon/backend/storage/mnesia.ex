@@ -1,5 +1,10 @@
 defmodule Kathikon.Backend.Storage.Mnesia do
-  @moduledoc false
+  @moduledoc """
+  Mnesia implementation of `Kathikon.Backend.Storage`.
+
+  Tables: `:kathikon_jobs`, `:kathikon_queues`. Copy type is controlled by
+  `config :kathikon, mnesia_copies:` (`:ram`, `:disc`, or `:auto`).
+  """
 
   @behaviour Kathikon.Backend.Storage
 
@@ -224,10 +229,9 @@ defmodule Kathikon.Backend.Storage.Mnesia do
   end
 
   defp storage_opts do
-    if node() == :nonode@nohost do
-      [ram_copies: [node()]]
-    else
-      [disc_copies: [node()]]
+    case Kathikon.Config.mnesia_copies() do
+      :ram -> [ram_copies: [node()]]
+      :disc -> [disc_copies: [node()]]
     end
   end
 

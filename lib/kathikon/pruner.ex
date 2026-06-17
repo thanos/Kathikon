@@ -1,9 +1,14 @@
 defmodule Kathikon.Pruner do
   @moduledoc """
-  Removes completed, cancelled, and discarded jobs past the retention period.
+  Removes terminal jobs past the retention period.
 
-  Mnesia is not an infinite history database. The pruner enforces retention
-  so coordination storage stays bounded.
+  Deletes `:completed`, `:cancelled`, and `:discarded` jobs older than
+  `retention_period`. Ticks every `prune_interval` ms.
+
+  Mnesia is coordination storage, not long-term history — export metrics
+  via telemetry for durable audit trails.
+
+  See `docs/guides/configuration.md`.
   """
 
   use GenServer

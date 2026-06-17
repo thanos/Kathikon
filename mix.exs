@@ -91,12 +91,9 @@ defmodule Kathikon.MixProject do
       "docs/guides/configuration.md",
       "docs/guides/storage-and-embedding.md",
       "docs/reference/modules.md",
-      "docs/phase-1-concepts.md",
-      "docs/phase-1-operations.md",
       "README.md",
       "docs/documentation.md": [title: "Documentation"],
-      "livebooks/kathikon_demo.livemd": [title: "Interactive demo"],
-      "plans/phase-1.md": [title: "Phase 1 plan"]
+      "livebooks/kathikon_demo.livemd": [title: "Interactive demo"]
     ]
   end
 end

@@ -160,9 +160,7 @@ open doc/index.html
 - [Module reference](docs/reference/modules.md)
 - [Configuration](docs/guides/configuration.md)
 - [Interactive demo (Livebook)](livebooks/kathikon_demo.livemd)
-- [Phase 1 implementation plan](plans/phase-1.md)
-- [Phase 1 concepts](docs/phase-1-concepts.md)
-- [Phase 1 operations](docs/phase-1-operations.md)
+
 
 ## License
 

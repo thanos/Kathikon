@@ -25,8 +25,6 @@ Start here if you are new to the library:
 | Document | Contents |
 |----------|----------|
 | [Module reference](reference/modules.md) | Every module and public function with examples |
-| [Phase 1 concepts](phase-1-concepts.md) | Design rationale (OTP, Mnesia, obligations) |
-| [Phase 1 operations](phase-1-operations.md) | Operational notes for running in production |
 | [Interactive demo](../livebooks/kathikon_demo.livemd) | Livebook walkthrough of Phase 1 features |
 
 ## Architecture at a glance

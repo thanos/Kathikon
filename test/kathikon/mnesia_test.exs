@@ -19,171 +19,91 @@ defmodule Kathikon.ConfigTest do
   end
 end
 
-defmodule Kathikon.Mnesia.ErlangTest do
-  use ExUnit.Case, async: false
-
-  alias Kathikon.Mnesia.Erlang, as: MnesiaBackend
-
-  test "delegates to the mnesia application" do
-    assert :yes = MnesiaBackend.system_info(:is_running)
-    assert is_list(MnesiaBackend.system_info(:tables))
-  end
-end
-
-defmodule Kathikon.MnesiaTest do
+defmodule Kathikon.Backend.Storage.LifecycleTest do
   use ExUnit.Case, async: false
 
   import Mox
 
+  alias Kathikon.Storage
+
+  @mock Kathikon.Backend.Storage.Mock
+
   setup :verify_on_exit!
 
   setup do
-    Application.put_env(:kathikon, :mnesia_backend, Kathikon.Mnesia.Mock)
+    Storage.backend(@mock)
 
     on_exit(fn ->
-      Application.put_env(:kathikon, :mnesia_backend, Kathikon.Mnesia.Erlang)
+      Storage.backend(Kathikon.Backend.Storage.Mnesia)
     end)
 
     :ok
   end
 
-  defp stub_running_tables do
-    Mox.stub(Kathikon.Mnesia.Mock, :system_info, fn
-      :is_running -> :yes
-      :tables -> []
-    end)
+  test "setup delegates to backend" do
+    Mox.expect(@mock, :setup, fn -> :ok end)
+    assert :ok = Storage.setup()
+  end
+
+  test "clear_jobs! delegates to backend" do
+    Mox.expect(@mock, :clear_jobs!, fn -> :ok end)
+    assert :ok = Storage.clear_jobs!()
+  end
+
+  test "reset! delegates to backend" do
+    Mox.expect(@mock, :reset!, fn -> :ok end)
+    assert :ok = Storage.reset!()
+  end
+end
+
+defmodule Kathikon.Backend.Storage.Mnesia.LifecycleTest do
+  use ExUnit.Case, async: false
+
+  alias Kathikon.{Backend.Storage.Mnesia, Job, Storage}
+
+  setup do
+    Storage.backend(Mnesia)
+    :ok = Storage.setup()
+    Storage.clear_jobs!()
+    :ok
+  end
+
+  test "setup is idempotent" do
+    assert :ok = Mnesia.setup()
+    assert :ok = Mnesia.setup()
   end
 
   test "setup starts mnesia when it is not running" do
-    Mox.expect(Kathikon.Mnesia.Mock, :system_info, fn :is_running -> :no end)
-    Mox.expect(Kathikon.Mnesia.Mock, :start, fn -> :ok end)
-    Mox.expect(Kathikon.Mnesia.Mock, :create_schema, fn _ -> :ok end)
-    stub_running_tables()
-
-    Mox.expect(Kathikon.Mnesia.Mock, :create_table, 2, fn _, _ -> {:atomic, :ok} end)
-    Mox.expect(Kathikon.Mnesia.Mock, :wait_for_tables, fn _, _ -> :ok end)
-
-    assert :ok = Kathikon.Mnesia.setup()
-  end
-
-  test "setup restarts mnesia when stopping" do
-    Mox.expect(Kathikon.Mnesia.Mock, :system_info, fn :is_running -> :stopping end)
-    Mox.expect(Kathikon.Mnesia.Mock, :stop, fn -> :ok end)
-    Mox.expect(Kathikon.Mnesia.Mock, :start, fn -> :ok end)
-    Mox.expect(Kathikon.Mnesia.Mock, :create_schema, fn _ -> {:error, {:already_exists, []}} end)
-    stub_running_tables()
-
-    Mox.expect(Kathikon.Mnesia.Mock, :create_table, 2, fn _, _ -> {:atomic, :ok} end)
-    Mox.expect(Kathikon.Mnesia.Mock, :wait_for_tables, fn _, _ -> :ok end)
-
-    assert :ok = Kathikon.Mnesia.setup()
-  end
-
-  test "setup tolerates existing schema" do
-    Mox.stub(Kathikon.Mnesia.Mock, :system_info, fn :is_running -> :yes end)
-
-    Mox.expect(Kathikon.Mnesia.Mock, :create_schema, fn _ ->
-      {:error, {~c"nonode@nohost", {:already_exists, ~c"nonode@nohost"}}}
-    end)
-
-    stub_running_tables()
-    Mox.expect(Kathikon.Mnesia.Mock, :create_table, 2, fn _, _ -> {:atomic, :ok} end)
-    Mox.expect(Kathikon.Mnesia.Mock, :wait_for_tables, fn _, _ -> :ok end)
-
-    assert :ok = Kathikon.Mnesia.setup()
-  end
-
-  test "setup raises when tables time out" do
-    Mox.stub(Kathikon.Mnesia.Mock, :system_info, fn :is_running -> :yes end)
-    Mox.expect(Kathikon.Mnesia.Mock, :create_schema, fn _ -> :ok end)
-    stub_running_tables()
-    Mox.expect(Kathikon.Mnesia.Mock, :create_table, 2, fn _, _ -> {:atomic, :ok} end)
-
-    Mox.expect(Kathikon.Mnesia.Mock, :wait_for_tables, fn _, _ ->
-      {:timeout, [:kathikon_jobs]}
-    end)
-
-    assert_raise RuntimeError, ~r/timed out waiting for mnesia tables/, fn ->
-      Kathikon.Mnesia.setup()
+    if :mnesia.system_info(:is_running) == :yes do
+      :mnesia.stop()
+      on_exit(fn -> :mnesia.start() end)
     end
+
+    assert :ok = Mnesia.setup()
+    assert :yes = :mnesia.system_info(:is_running)
   end
 
-  test "setup raises on table error" do
-    Mox.stub(Kathikon.Mnesia.Mock, :system_info, fn :is_running -> :yes end)
-    Mox.expect(Kathikon.Mnesia.Mock, :create_schema, fn _ -> :ok end)
-    stub_running_tables()
-    Mox.expect(Kathikon.Mnesia.Mock, :create_table, 2, fn _, _ -> {:atomic, :ok} end)
+  test "clear_jobs! removes stored jobs" do
+    job =
+      Job.build(Kathikon.Workers.SuccessWorker, %{}, queue: :default)
+      |> Map.put(:state, :available)
 
-    Mox.expect(Kathikon.Mnesia.Mock, :wait_for_tables, fn _, _ ->
-      {:error, :broken}
-    end)
+    {:ok, _} = Storage.insert(job)
+    assert [_] = Storage.all()
 
-    assert_raise RuntimeError, ~r/mnesia table error/, fn ->
-      Kathikon.Mnesia.setup()
-    end
+    assert :ok = Mnesia.clear_jobs!()
+    assert [] = Storage.all()
   end
 
-  test "setup raises when table creation fails" do
-    Mox.stub(Kathikon.Mnesia.Mock, :system_info, fn :is_running -> :yes end)
-    Mox.expect(Kathikon.Mnesia.Mock, :create_schema, fn _ -> :ok end)
-    stub_running_tables()
+  test "reset! recreates tables and clears jobs" do
+    job =
+      Job.build(Kathikon.Workers.SuccessWorker, %{}, queue: :default)
+      |> Map.put(:state, :available)
 
-    Mox.expect(Kathikon.Mnesia.Mock, :create_table, fn _, _ ->
-      {:error, {:badarg, :kathikon_jobs}}
-    end)
-
-    assert_raise RuntimeError, ~r/failed to create mnesia table/, fn ->
-      Kathikon.Mnesia.setup()
-    end
-  end
-
-  test "setup skips existing tables" do
-    Mox.stub(Kathikon.Mnesia.Mock, :system_info, fn
-      :is_running -> :yes
-      :tables -> [:kathikon_jobs, :kathikon_queues]
-    end)
-
-    Mox.expect(Kathikon.Mnesia.Mock, :create_schema, fn _ -> :ok end)
-    Mox.expect(Kathikon.Mnesia.Mock, :wait_for_tables, fn _, _ -> :ok end)
-
-    assert :ok = Kathikon.Mnesia.setup()
-  end
-
-  test "clear_jobs! skips missing table" do
-    Mox.stub(Kathikon.Mnesia.Mock, :system_info, fn :tables -> [] end)
-    assert :ok = Kathikon.Mnesia.clear_jobs!()
-  end
-
-  test "clear_jobs! clears existing table" do
-    Mox.stub(Kathikon.Mnesia.Mock, :system_info, fn :tables -> [:kathikon_jobs] end)
-    Mox.expect(Kathikon.Mnesia.Mock, :clear_table, fn :kathikon_jobs -> :ok end)
-    assert :ok = Kathikon.Mnesia.clear_jobs!()
-  end
-
-  test "reset! deletes existing tables and recreates schema" do
-    {:ok, agent} = Agent.start_link(fn -> [:kathikon_jobs, :kathikon_queues] end)
-
-    Mox.stub(Kathikon.Mnesia.Mock, :system_info, fn
-      :is_running -> :yes
-      :tables -> Agent.get(agent, & &1)
-    end)
-
-    Mox.expect(Kathikon.Mnesia.Mock, :delete_table, 2, fn table ->
-      Agent.update(agent, &List.delete(&1, table))
-      :ok
-    end)
-
-    Mox.expect(Kathikon.Mnesia.Mock, :create_schema, fn _ -> :ok end)
-
-    Mox.expect(Kathikon.Mnesia.Mock, :create_table, 2, fn table, _opts ->
-      Agent.update(agent, &[table | &1])
-      {:atomic, :ok}
-    end)
-
-    Mox.expect(Kathikon.Mnesia.Mock, :wait_for_tables, fn _, _ -> :ok end)
-
-    assert :ok = Kathikon.Mnesia.reset!()
-
-    on_exit(fn -> if Process.alive?(agent), do: Agent.stop(agent) end)
+    {:ok, _} = Storage.insert(job)
+    assert :ok = Mnesia.reset!()
+    assert [] = Storage.all()
+    assert :kathikon_jobs in :mnesia.system_info(:tables)
+    assert :kathikon_queues in :mnesia.system_info(:tables)
   end
 end

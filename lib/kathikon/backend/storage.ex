@@ -1,7 +1,11 @@
-defmodule Kathikon.Storage.Backend do
+defmodule Kathikon.Backend.Storage do
   @moduledoc false
 
   alias Kathikon.Job
+
+  @callback setup() :: :ok
+  @callback clear_jobs!() :: :ok
+  @callback reset!() :: :ok
 
   @callback insert(Job.t()) :: {:ok, Job.t()} | {:error, term()}
   @callback update(Job.t()) :: {:ok, Job.t()} | {:error, term()}

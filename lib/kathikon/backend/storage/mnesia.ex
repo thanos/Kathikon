@@ -1,12 +1,36 @@
-defmodule Kathikon.Storage.Mnesia do
+defmodule Kathikon.Backend.Storage.Mnesia do
   @moduledoc false
 
-  @behaviour Kathikon.Storage.Backend
+  @behaviour Kathikon.Backend.Storage
 
   alias Kathikon.Job
 
+  @tables [:kathikon_jobs, :kathikon_queues]
   @jobs :kathikon_jobs
   @queues :kathikon_queues
+
+  @impl true
+  def setup do
+    ensure_schema()
+    ensure_tables()
+    :ok
+  end
+
+  @impl true
+  def clear_jobs! do
+    if table_exists?(:kathikon_jobs) do
+      :mnesia.clear_table(:kathikon_jobs)
+    end
+
+    :ok
+  end
+
+  @impl true
+  def reset! do
+    delete_existing_tables()
+    setup()
+    :ok
+  end
 
   @impl true
   def insert(%Job{} = job) do
@@ -134,6 +158,95 @@ defmodule Kathikon.Storage.Mnesia do
     end)
 
     :ok
+  end
+
+  defp delete_existing_tables do
+    if mnesia_running?(), do: Enum.each(@tables, &delete_table_if_exists/1)
+  end
+
+  defp mnesia_running?, do: :mnesia.system_info(:is_running) == :yes
+
+  defp delete_table_if_exists(table) do
+    if table_exists?(table), do: :mnesia.delete_table(table)
+  end
+
+  defp ensure_schema do
+    case :mnesia.system_info(:is_running) do
+      :yes ->
+        :ok
+
+      :no ->
+        :mnesia.start()
+
+      :stopping ->
+        :mnesia.stop()
+        :mnesia.start()
+    end
+
+    case :mnesia.create_schema([node()]) do
+      :ok -> :ok
+      {:error, {_, {:already_exists, _}}} -> :ok
+      {:error, {:already_exists, _}} -> :ok
+      other -> other
+    end
+  end
+
+  defp ensure_tables do
+    for table <- @tables do
+      create_table(table)
+    end
+
+    case :mnesia.wait_for_tables(@tables, 5_000) do
+      :ok ->
+        :ok
+
+      {:timeout, tables} ->
+        raise "timed out waiting for mnesia tables: #{inspect(tables)}"
+
+      {:error, reason} ->
+        raise "mnesia table error: #{inspect(reason)}"
+    end
+  end
+
+  defp create_table(:kathikon_jobs) do
+    create_if_missing(:kathikon_jobs, table_opts([:id, :payload]))
+  end
+
+  defp create_table(:kathikon_queues) do
+    create_if_missing(:kathikon_queues, table_opts([:name, :config]))
+  end
+
+  defp table_opts(attributes) do
+    [
+      attributes: attributes,
+      type: :ordered_set
+    ] ++ storage_opts()
+  end
+
+  defp storage_opts do
+    if node() == :nonode@nohost do
+      [ram_copies: [node()]]
+    else
+      [disc_copies: [node()]]
+    end
+  end
+
+  defp create_if_missing(table, opts) do
+    if table_exists?(table) do
+      :ok
+    else
+      case :mnesia.create_table(table, opts) do
+        {:ok, _} -> :ok
+        {:atomic, :ok} -> :ok
+        :ok -> :ok
+        {:error, {:already_exists, _, _}} -> :ok
+        other -> raise "failed to create mnesia table #{table}: #{inspect(other)}"
+      end
+    end
+  end
+
+  defp table_exists?(table) do
+    :mnesia.system_info(:tables) |> Enum.member?(table)
   end
 
   defp all_jobs do

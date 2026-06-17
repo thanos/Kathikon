@@ -1,14 +1,36 @@
 defmodule Kathikon.Storage do
-  @moduledoc false
+  @moduledoc """
+  Storage facade for job persistence and Mnesia lifecycle.
+
+  Runtime code delegates to the configured `Kathikon.Backend.Storage`
+  implementation (default: `Kathikon.Backend.Storage.Mnesia`).
+  """
 
   alias Kathikon.Job
 
   @backend_key :storage_backend
 
+  @doc """
+  Ensures the storage backend schema and tables exist on the current node.
+
+  Call this when embedding Kathikon outside `Kathikon.Application`, or when
+  tests need an isolated storage bootstrap before the application starts.
+  """
+  @spec setup() :: :ok
+  def setup, do: backend().setup()
+
+  @doc false
+  @spec clear_jobs!() :: :ok
+  def clear_jobs!, do: backend().clear_jobs!()
+
+  @doc false
+  @spec reset!() :: :ok
+  def reset!, do: backend().reset!()
+
   @doc false
   @spec backend() :: module()
   def backend do
-    Application.get_env(:kathikon, @backend_key, Kathikon.Storage.Mnesia)
+    Application.get_env(:kathikon, @backend_key, Kathikon.Backend.Storage.Mnesia)
   end
 
   @doc false

@@ -1,12 +1,12 @@
-defmodule Kathikon.Storage.MnesiaTest do
+defmodule Kathikon.Backend.Storage.MnesiaTest do
   use ExUnit.Case, async: false
 
   alias Kathikon.{Job, Storage}
 
   setup do
-    Storage.backend(Kathikon.Storage.Mnesia)
-    Kathikon.Mnesia.setup()
-    Kathikon.Mnesia.clear_jobs!()
+    Storage.backend(Kathikon.Backend.Storage.Mnesia)
+    Storage.setup()
+    Storage.clear_jobs!()
     :ok
   end
 

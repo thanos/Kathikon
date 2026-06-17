@@ -32,44 +32,48 @@ defmodule Kathikon.TestSupport do
 
   def stub_storage_defaults! do
     test_pid = self()
+    mock = Kathikon.Backend.Storage.Mock
 
-    Mox.stub(Kathikon.Storage.Mock, :claim, fn _, _ -> :not_found end)
+    Mox.stub(mock, :claim, fn _, _ -> :not_found end)
 
-    Mox.stub(Kathikon.Storage.Mock, :update, fn job ->
+    Mox.stub(mock, :update, fn job ->
       {:ok, job}
     end)
 
-    Mox.stub(Kathikon.Storage.Mock, :insert, fn job ->
+    Mox.stub(mock, :insert, fn job ->
       {:ok, job}
     end)
 
-    Mox.stub(Kathikon.Storage.Mock, :fetch, fn _ ->
+    Mox.stub(mock, :fetch, fn _ ->
       {:error, :not_found}
     end)
 
-    Mox.stub(Kathikon.Storage.Mock, :promote_scheduled, fn _ -> 0 end)
-    Mox.stub(Kathikon.Storage.Mock, :prunable_jobs, fn _ -> [] end)
-    Mox.stub(Kathikon.Storage.Mock, :delete, fn _ -> :ok end)
-    Mox.stub(Kathikon.Storage.Mock, :all, fn -> [] end)
-    Mox.stub(Kathikon.Storage.Mock, :register_queue, fn _, _ -> :ok end)
+    Mox.stub(mock, :promote_scheduled, fn _ -> 0 end)
+    Mox.stub(mock, :prunable_jobs, fn _ -> [] end)
+    Mox.stub(mock, :delete, fn _ -> :ok end)
+    Mox.stub(mock, :all, fn -> [] end)
+    Mox.stub(mock, :register_queue, fn _, _ -> :ok end)
+    Mox.stub(mock, :setup, fn -> :ok end)
+    Mox.stub(mock, :clear_jobs!, fn -> :ok end)
+    Mox.stub(mock, :reset!, fn -> :ok end)
 
     for queue <- Kathikon.Config.queue_names() do
       case Registry.lookup(Kathikon.Registry, {:dispatcher, queue}) do
-        [{pid, _}] -> Mox.allow(Kathikon.Storage.Mock, test_pid, pid)
+        [{pid, _}] -> Mox.allow(mock, test_pid, pid)
         [] -> :ok
       end
     end
 
     for name <- [Kathikon.Scheduler, Kathikon.Pruner] do
-      if pid = Process.whereis(name), do: Mox.allow(Kathikon.Storage.Mock, test_pid, pid)
+      if pid = Process.whereis(name), do: Mox.allow(mock, test_pid, pid)
     end
   end
 
   def reset! do
-    Kathikon.Storage.backend(Kathikon.Storage.Mnesia)
-    Kathikon.Mnesia.clear_jobs!()
+    Kathikon.Storage.backend(Kathikon.Backend.Storage.Mnesia)
+    Kathikon.Storage.clear_jobs!()
     Process.sleep(100)
-    Kathikon.Mnesia.clear_jobs!()
+    Kathikon.Storage.clear_jobs!()
     reset_order!()
     :ok
   end

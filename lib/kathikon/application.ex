@@ -5,7 +5,7 @@ defmodule Kathikon.Application do
 
   @impl true
   def start(_type, _args) do
-    :ok = Kathikon.Mnesia.setup()
+    :ok = Kathikon.Storage.setup()
 
     children = [
       {Registry, keys: :unique, name: Kathikon.Registry},

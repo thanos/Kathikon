@@ -1,7 +1,19 @@
-ExUnit.start()
+cover_mode? =
+  case :code.which(:cover) do
+    :non_existing ->
+      false
 
-Mox.defmock(Kathikon.Storage.Mock, for: Kathikon.Storage.Backend)
-Mox.defmock(Kathikon.Mnesia.Mock, for: Kathikon.Mnesia.Backend)
+    _ ->
+      case :cover.modules() do
+        {:error, :not_started} -> false
+        _ -> true
+      end
+  end
 
-Application.put_env(:kathikon, :storage_backend, Kathikon.Storage.Mnesia)
-Application.put_env(:kathikon, :mnesia_backend, Kathikon.Mnesia.Erlang)
+exclude = if cover_mode?, do: [], else: [integration: true]
+
+ExUnit.start(exclude: exclude)
+
+Mox.defmock(Kathikon.Backend.Storage.Mock, for: Kathikon.Backend.Storage)
+
+Application.put_env(:kathikon, :storage_backend, Kathikon.Backend.Storage.Mnesia)

@@ -52,11 +52,11 @@ defmodule Kathikon.MixProject do
 
   defp package do
     [
-      name: "Kathikon",
+      name: "kathikon",
       files: ~w(lib .formatter.exs mix.exs README.md LICENSE),
       licenses: ["MIT"],
       maintainers: ["Thanos Vassilakis"],
-      links: %{"GitHub" => "https://github.com/thanos/Kathikon"}
+      links: %{"GitHub" => "https://github.com/thanos/kathikon"}
     ]
   end
 
@@ -64,7 +64,7 @@ defmodule Kathikon.MixProject do
     [
       main: "readme",
       source_ref: "v#{@version}",
-      source_url: "https://github.com/thanos/Kathikon/blob/main",
+      source_url: "https://github.com/thanos/kathikon/blob/main",
       extras: extras(),
       groups_for_modules: [
         API: ~r/^Kathikon$/,
@@ -95,7 +95,7 @@ defmodule Kathikon.MixProject do
       "docs/guides/storage-and-embedding.md",
       "docs/reference/modules.md",
       "README.md",
-      LICENSE: [title: "License"],
+      "LICENSE": [title: "License"],
       "docs/documentation.md": [title: "Documentation"],
       "livebooks/kathikon_demo.livemd": [title: "Interactive demo"]
     ]

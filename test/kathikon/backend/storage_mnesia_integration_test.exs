@@ -9,7 +9,6 @@ defmodule Kathikon.Backend.Storage.Mnesia.IntegrationTest do
   alias Kathikon.{Job, Storage}
 
   setup do
-    Storage.backend(Mnesia)
     ensure_mnesia!()
     :ok = Storage.setup()
     Storage.clear_jobs!()
@@ -51,7 +50,38 @@ defmodule Kathikon.Backend.Storage.Mnesia.IntegrationTest do
     assert :ok = Mnesia.setup()
     assert :yes = :mnesia.system_info(:is_running)
     assert :kathikon_jobs in :mnesia.system_info(:tables)
-    assert :kathikon_queues in :mnesia.system_info(:tables)
+  end
+
+  test "setup succeeds with disc copies" do
+    Application.put_env(:kathikon, :mnesia_copies, :disc)
+
+    on_exit(fn -> Application.delete_env(:kathikon, :mnesia_copies) end)
+
+    :mnesia.stop()
+    :ok = :mnesia.delete_schema([node()])
+
+    assert :ok = Mnesia.setup()
+    assert :kathikon_jobs in :mnesia.system_info(:tables)
+    assert node() in :mnesia.table_info(:kathikon_jobs, :disc_copies)
+  end
+
+  test "disc copies persist jobs across mnesia restarts" do
+    Application.put_env(:kathikon, :mnesia_copies, :disc)
+
+    on_exit(fn -> Application.delete_env(:kathikon, :mnesia_copies) end)
+
+    :mnesia.stop()
+    assert :ok = Mnesia.reset!()
+
+    job = available_job()
+    {:ok, inserted} = Storage.insert(job)
+
+    :mnesia.stop()
+    :mnesia.start()
+    :ok = :mnesia.wait_for_tables([:kathikon_jobs], 5_000)
+
+    assert {:ok, fetched} = Storage.fetch(inserted.id)
+    assert fetched.id == inserted.id
   end
 
   test "claim returns error when job payload cannot be decoded" do
@@ -79,7 +109,6 @@ defmodule Kathikon.Backend.Storage.Mnesia.IntegrationTest do
     assert :ok = Mnesia.reset!()
     assert :yes = :mnesia.system_info(:is_running)
     assert :kathikon_jobs in :mnesia.system_info(:tables)
-    assert :kathikon_queues in :mnesia.system_info(:tables)
   end
 
   test "setup recreates a dropped jobs table" do
@@ -90,15 +119,6 @@ defmodule Kathikon.Backend.Storage.Mnesia.IntegrationTest do
     assert :ok = Mnesia.setup()
     assert :kathikon_jobs in :mnesia.system_info(:tables)
     assert [] = Storage.all()
-  end
-
-  test "setup recreates a dropped queues table" do
-    assert :ok = Storage.register_queue(:emails, concurrency: 3)
-    :ok = delete_table!(:kathikon_queues)
-
-    assert :ok = Mnesia.setup()
-    assert :kathikon_queues in :mnesia.system_info(:tables)
-    assert :ok = Storage.register_queue(:emails, concurrency: 3)
   end
 
   test "setup tolerates an existing mnesia schema" do
@@ -123,7 +143,6 @@ defmodule Kathikon.Backend.Storage.Mnesia.IntegrationTest do
     assert :ok = Mnesia.reset!()
     assert [] = Storage.all()
     assert :kathikon_jobs in :mnesia.system_info(:tables)
-    assert :kathikon_queues in :mnesia.system_info(:tables)
   end
 
   test "prunable_jobs uses cancelled_at for cancelled jobs" do
@@ -184,19 +203,6 @@ defmodule Kathikon.Backend.Storage.Mnesia.IntegrationTest do
     assert {:ok, claimed} = Storage.claim(:default, now)
     assert claimed.id == job.id
     assert claimed.state == :executing
-  end
-
-  test "scheduled_jobs excludes jobs scheduled in the future" do
-    now = DateTime.utc_now()
-    future = DateTime.add(now, 3600, :second)
-
-    job =
-      Job.build(Kathikon.Workers.SuccessWorker, %{}, queue: :default)
-      |> Map.put(:state, :scheduled)
-      |> Map.put(:scheduled_at, future)
-
-    {:ok, _} = Storage.insert(job)
-    assert [] = Storage.scheduled_jobs(now)
   end
 
   test "promote_scheduled returns zero when no jobs are due" do

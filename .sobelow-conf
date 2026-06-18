@@ -1,0 +1,5 @@
+[
+  # Job payloads are written by Kathikon on the same node via term_to_binary/1.
+  # decode_payload/1 uses [:safe]; not an untrusted boundary in Phase 1.
+  ignore: ["Misc.BinToTerm"]
+]

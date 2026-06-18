@@ -6,7 +6,7 @@ Kathikon persists jobs in **Mnesia** via `Kathikon.Storage`, backed by `Kathikon
 
 When Kathikon is a dependency, `Kathikon.Application` runs on boot:
 
-1. `Kathikon.Storage.setup/0` — Mnesia schema + `:kathikon_jobs` / `:kathikon_queues` tables
+1. `Kathikon.Storage.setup/0` — Mnesia schema + `:kathikon_jobs` table
 2. Starts Registry, Queue supervisor, Scheduler, Pruner
 3. `Kathikon.Queue.start_configured/0` — dispatchers for configured queues
 
@@ -30,7 +30,7 @@ Livebook nodes are named but lack a Mnesia disc directory. Use RAM copies:
 
 ```elixir
 Mix.install(
-  [{:kathikon, path: "..", env: :dev}],
+  [{:kathikon, path: "..", env: :prod}],
   config: [kathikon: [mnesia_copies: :ram, poll_interval: 150, ...]]
 )
 ```
@@ -40,13 +40,26 @@ See the [interactive demo](../../livebooks/kathikon_demo.livemd).
 ## Test helpers
 
 ```elixir
-# Clear jobs between tests
+# Clear jobs between integration tests
 :ok = Kathikon.Storage.clear_jobs!()
 
-# Swap storage backend (Mox)
-Kathikon.Storage.backend(Kathikon.Backend.Storage.Mock)
-on_exit(fn -> Kathikon.Storage.backend(Kathikon.Backend.Storage.Mnesia) end)
+# Facade tests (Kathikon.cancel/1, Kathikon.fetch/1) — mock scoped to the test process
+Kathikon.TestSupport.use_mock_storage!(context)
+
+# Runtime unit tests — inject storage at start_link/1
+{:ok, pid} =
+  Kathikon.Dispatcher.start_link(
+    queue: :test,
+    config: [concurrency: 1],
+    storage: Kathikon.Backend.Storage.Mock
+  )
+
+Mox.allow(Kathikon.Backend.Storage.Mock, self(), pid)
 ```
+
+Do **not** reconfigure the global `storage_backend` in tests.
+The application scheduler, pruner, and dispatchers always use Mnesia configured at boot.
+Mock tests start their own processes with `storage:` or scope mocks with `use_mock_storage!/1`.
 
 `clear_jobs!/0` and `reset!/0` are intended for tests — not public production APIs.
 
@@ -62,7 +75,6 @@ on_exit(fn -> Kathikon.Storage.backend(Kathikon.Backend.Storage.Mnesia) end)
 | `promote_scheduled/1` | Scheduler batch promotion |
 | `prunable_jobs/1`, `delete/1` | Pruner support |
 | `all/0` | List all jobs |
-| `register_queue/2` | Persist queue metadata |
 
 Application code should use `Kathikon.insert/3` rather than calling `Storage` directly.
 
@@ -79,7 +91,8 @@ The behaviour is `Kathikon.Backend.Storage`. Phase 1 ships one implementation (`
 | Table | Contents |
 |-------|----------|
 | `:kathikon_jobs` | Job records (id, serialized `%Kathikon.Job{}`) |
-| `:kathikon_queues` | Queue name + config keyword |
+
+Queue configuration lives in `config :kathikon, queues:` (`Kathikon.Config`), not in Mnesia.
 
 ## Related
 

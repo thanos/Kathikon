@@ -26,6 +26,7 @@ All events start with `[:kathikon, ...]`.
 | Event | When | Measurements | Metadata |
 |-------|------|--------------|----------|
 | `[:kathikon, :scheduler, :tick]` | Scheduler promoted jobs | `%{promoted: count}` | `%{}` |
+| `[:kathikon, :pruner, :tick]` | Pruner deleted jobs | `%{pruned: count}` | `%{}` |
 | `[:kathikon, :dispatcher, :poll]` | Job claimed on poll | `%{count: 1}` | `queue`, `job_id` |
 
 ## Default logger

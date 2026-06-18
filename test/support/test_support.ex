@@ -2,8 +2,28 @@ defmodule Kathikon.TestSupport do
   @moduledoc false
 
   import ExUnit.Assertions
+  import ExUnit.Callbacks, only: [on_exit: 2]
 
+  @mock Kathikon.Backend.Storage.Mock
   @order_name Kathikon.TestOrder
+
+  @doc """
+  Scopes the mock storage backend to the current test process.
+
+  Use for facade tests (`Kathikon.cancel/1`, `Kathikon.fetch/1`, and similar)
+  that call `Kathikon.Storage` from the test process. Runtime processes under
+  test should receive `storage: #{inspect(@mock)}` at `start_link/1` instead.
+  """
+  def use_mock_storage!(context) do
+    stub_storage_defaults!()
+    Kathikon.Storage.set_test_backend!(@mock)
+
+    on_exit(context, fn ->
+      Kathikon.Storage.clear_test_backend!()
+    end)
+
+    :ok
+  end
 
   def start_order_agent! do
     case Process.whereis(@order_name) do
@@ -31,46 +51,30 @@ defmodule Kathikon.TestSupport do
   end
 
   def stub_storage_defaults! do
-    test_pid = self()
-    mock = Kathikon.Backend.Storage.Mock
+    Mox.stub(@mock, :claim, fn _, _ -> :not_found end)
 
-    Mox.stub(mock, :claim, fn _, _ -> :not_found end)
-
-    Mox.stub(mock, :update, fn job ->
+    Mox.stub(@mock, :update, fn job ->
       {:ok, job}
     end)
 
-    Mox.stub(mock, :insert, fn job ->
+    Mox.stub(@mock, :insert, fn job ->
       {:ok, job}
     end)
 
-    Mox.stub(mock, :fetch, fn _ ->
+    Mox.stub(@mock, :fetch, fn _ ->
       {:error, :not_found}
     end)
 
-    Mox.stub(mock, :promote_scheduled, fn _ -> 0 end)
-    Mox.stub(mock, :prunable_jobs, fn _ -> [] end)
-    Mox.stub(mock, :delete, fn _ -> :ok end)
-    Mox.stub(mock, :all, fn -> [] end)
-    Mox.stub(mock, :register_queue, fn _, _ -> :ok end)
-    Mox.stub(mock, :setup, fn -> :ok end)
-    Mox.stub(mock, :clear_jobs!, fn -> :ok end)
-    Mox.stub(mock, :reset!, fn -> :ok end)
-
-    for queue <- Kathikon.Config.queue_names() do
-      case Registry.lookup(Kathikon.Registry, {:dispatcher, queue}) do
-        [{pid, _}] -> Mox.allow(mock, test_pid, pid)
-        [] -> :ok
-      end
-    end
-
-    for name <- [Kathikon.Scheduler, Kathikon.Pruner] do
-      if pid = Process.whereis(name), do: Mox.allow(mock, test_pid, pid)
-    end
+    Mox.stub(@mock, :promote_scheduled, fn _ -> 0 end)
+    Mox.stub(@mock, :prunable_jobs, fn _ -> [] end)
+    Mox.stub(@mock, :delete, fn _ -> :ok end)
+    Mox.stub(@mock, :all, fn -> [] end)
+    Mox.stub(@mock, :setup, fn -> :ok end)
+    Mox.stub(@mock, :clear_jobs!, fn -> :ok end)
+    Mox.stub(@mock, :reset!, fn -> :ok end)
   end
 
   def reset! do
-    Kathikon.Storage.backend(Kathikon.Backend.Storage.Mnesia)
     Kathikon.Storage.clear_jobs!()
     Process.sleep(100)
     Kathikon.Storage.clear_jobs!()

@@ -163,9 +163,21 @@ defmodule Kathikon.Job do
     {:kathikon_jobs, job.id, :erlang.term_to_binary(job)}
   end
 
+  @doc """
+  Deserializes a job payload written by `to_record/1`.
+
+  Uses `:erlang.binary_to_term/2` with `[:safe]`. Payloads are produced
+  internally by Kathikon on the same node; this is not an untrusted boundary
+  in Phase 1.
+  """
+  @spec decode_payload(binary()) :: t()
+  def decode_payload(binary) when is_binary(binary) do
+    :erlang.binary_to_term(binary, [:safe])
+  end
+
   @doc false
   def from_record({:kathikon_jobs, id, binary}) when is_binary(binary) do
-    job = :erlang.binary_to_term(binary)
+    job = decode_payload(binary)
     %{job | id: id}
   end
 

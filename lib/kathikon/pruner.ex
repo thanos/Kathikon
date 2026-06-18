@@ -5,6 +5,12 @@ defmodule Kathikon.Pruner do
   Deletes `:completed`, `:cancelled`, and `:discarded` jobs older than
   `retention_period`. Ticks every `prune_interval` ms.
 
+  ## `start_link/1` options
+
+    * `:interval` — tick period in ms (default from `Kathikon.Config`)
+    * `:storage` — module implementing `Kathikon.Backend.Storage` callbacks
+    * `:name` — registered name (default `Kathikon.Pruner`; use `false` in tests)
+
   Mnesia is coordination storage, not long-term history — export metrics
   via telemetry for durable audit trails.
 
@@ -17,15 +23,18 @@ defmodule Kathikon.Pruner do
 
   @tick :tick
 
-  def start_link(opts) do
-    GenServer.start_link(__MODULE__, opts, name: __MODULE__)
+  def start_link(opts \\ []) do
+    {name, opts} = Keyword.pop(opts, :name, __MODULE__)
+    server_opts = if name in [false, nil], do: [], else: [name: name]
+    GenServer.start_link(__MODULE__, opts, server_opts)
   end
 
   @impl true
   def init(opts) do
     interval = Keyword.get(opts, :interval, Kathikon.Config.prune_interval())
+    storage = Keyword.get(opts, :storage, Storage)
     schedule_tick(interval)
-    {:ok, %{interval: interval}}
+    {:ok, %{interval: interval, storage: storage}}
   end
 
   @impl true
@@ -33,7 +42,7 @@ defmodule Kathikon.Pruner do
     now = DateTime.utc_now()
     retention = Kathikon.Config.retention_period()
     cutoff = DateTime.add(now, -retention, :millisecond)
-    pruned = prune_jobs(cutoff)
+    pruned = prune_jobs(state.storage, cutoff)
 
     if pruned > 0 do
       Telemetry.event([:pruner, :tick], %{pruned: pruned}, %{})
@@ -43,10 +52,10 @@ defmodule Kathikon.Pruner do
     {:noreply, state}
   end
 
-  defp prune_jobs(cutoff) do
-    Storage.prunable_jobs(cutoff)
+  defp prune_jobs(storage, cutoff) do
+    storage.prunable_jobs(cutoff)
     |> Enum.reduce(0, fn job, count ->
-      Storage.delete(job.id)
+      storage.delete(job.id)
 
       Telemetry.event([:job, :prune], %{}, %{
         queue: job.queue,

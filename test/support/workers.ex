@@ -49,6 +49,25 @@ defmodule Kathikon.Workers.SleepWorker do
   end
 end
 
+defmodule Kathikon.Workers.SleepOnceWorker do
+  @moduledoc false
+  use Kathikon.Worker
+
+  @impl true
+  def perform(job) do
+    key = {__MODULE__, job.id}
+
+    case :persistent_term.get(key, :pending) do
+      :pending ->
+        :persistent_term.put(key, :done)
+        {:sleep, 1}
+
+      :done ->
+        :ok
+    end
+  end
+end
+
 defmodule Kathikon.Workers.RaiseWorker do
   @moduledoc false
   use Kathikon.Worker

@@ -1,3 +1,5 @@
+<!-- livebook:{"autosave_interval_s":null} -->
+
 # Kathikon Demo
 
 ## Intro
@@ -12,10 +14,12 @@ Run the setup cells top-to-bottom, then try each demo section.
 
 Livebook runs on a named node without a Mnesia disc directory — use `mnesia_copies: :ram` (also auto-detected when the node name contains `livebook`).
 
+Use `env: :prod` so `Mix.install` only pulls runtime deps (`:telemetry`). `env: :dev` would require dev-only tools (`ex_doc`, `sobelow`, …) that are not fetched in Livebook.
+
 ```elixir
 Mix.install(
   [
-    {:kathikon, path: Path.expand("..", __DIR__), env: :dev},
+    {:kathikon, path: Path.expand("..", __DIR__), env: :prod},
     {:kino, "~> 0.19.0"},
     {:kino_vega_lite, "~> 0.1.11"}
   ],
@@ -188,20 +192,81 @@ defmodule Demo.FlashSaleWorker do
 end
 ```
 
+### AsyncStore
+
+Simulates a 3rd-party API that returns `:pending` until the async job is ready.
+
+```elixir
+defmodule Demo.AsyncStore do
+  @name __MODULE__
+  @ready_after 3
+
+  def start, do: Agent.start_link(fn -> %{} end, name: @name)
+
+  def status(request_url) do
+    Agent.get_and_update(@name, fn state ->
+      polls = Map.get(state, request_url, 0) + 1
+      new_state = Map.put(state, request_url, polls)
+
+      result =
+        if polls >= @ready_after do
+          {:ok, %{"status" => "ready", "url" => request_url}}
+        else
+          :pending
+        end
+
+      {result, new_state}
+    end)
+  end
+
+  def forget(request_url), do: Agent.update(@name, &Map.delete(&1, request_url))
+  def reset!, do: Agent.update(@name, fn _ -> %{} end)
+end
+
+{:ok, _} = Demo.AsyncStore.start()
+```
+
+### AsyncRequestWorker
+
+Typical `{:sleep, seconds}` use case: poll an external endpoint until the result is ready.
+
+```elixir
+defmodule Demo.AsyncRequestWorker do
+  use Kathikon.Worker
+
+  @poll_interval 3
+
+  @impl true
+  def perform(%{args: %{"request_url" => request_url}}) do
+    case Demo.AsyncStore.status(request_url) do
+      {:ok, data} ->
+        Demo.Log.append("Data received — processing #{inspect(data)}")
+        Demo.AsyncStore.forget(request_url)
+        :ok
+
+      :pending ->
+        Demo.Log.append("Poll #{request_url}: still pending")
+        {:sleep, @poll_interval}
+    end
+  end
+end
+```
+
 ---
 
 ## Example scenarios
 
 | Scenario              | Worker               | Features         |
 | --------------------- | -------------------- | ---------------- |
-| Welcome email ✅     | `SendEmailWorker`    | insert, execute  |
-| Email queue ✅       | `SendEmailWorker`    | `queue: :emails` |
-| Weekly digest ✅     | `SendEmailWorker`    | `schedule_in`    |
-| Flash sale ✅        | `FlashSaleWorker`    | `priority`       |
-| Payment retry ✅     | `FlakyPaymentWorker` | backoff          |
-| Dead letter ✅       | `AlwaysFailWorker`   | `max_attempts`   |
-| Cancel newsletter ✅ | `SendEmailWorker`    | `cancel/1`       |
-| Thumbnails ✅        | `ThumbnailWorker`    | concurrency      |
+| Welcome email     | `SendEmailWorker`    | insert, execute  |
+| Email queue       | `SendEmailWorker`    | `queue: :emails` |
+| Weekly digest     | `SendEmailWorker`    | `schedule_in`    |
+| Flash sale        | `FlashSaleWorker`    | `priority`       |
+| Payment retry     | `FlakyPaymentWorker` | backoff          |
+| Async poll        | `AsyncRequestWorker` | `{:sleep, seconds}` |
+| Dead letter       | `AlwaysFailWorker`   | `max_attempts`   |
+| Cancel newsletter | `SendEmailWorker`    | `cancel/1`       |
+| Thumbnails        | `ThumbnailWorker`    | concurrency      |
 
 ---
 
@@ -297,7 +362,31 @@ Demo.Log.clear()
 {done.attempts, done.errors}
 ```
 
-## 6. Discard
+## 6. Async polling
+
+Poll a 3rd-party endpoint until the async result is ready. While status is `:pending`, return `{:sleep, seconds}` — the job moves to `:scheduled` and runs again later **without** incrementing `attempts` or appending to `errors` (contrast with **Payment retry** above). Production intervals are often much longer (e.g. `{:sleep, 360}`); we use 3s here so the demo finishes quickly.
+
+```elixir
+Demo.Log.clear()
+Demo.AsyncStore.reset!()
+
+{:ok, job} =
+  Kathikon.insert(Demo.AsyncRequestWorker, %{
+    "request_url" => "https://api.example.com/jobs/abc-123"
+  })
+
+Process.sleep(400)
+
+{:ok, deferred} = Kathikon.fetch(job.id)
+{deferred.state, deferred.attempts, deferred.errors}
+```
+
+```elixir
+{:ok, done} = Demo.await(job.id, :completed, 20_000)
+{done.attempts, done.errors, Demo.Log.entries()}
+```
+
+## 7. Discard
 
 ```elixir
 {:ok, job} =
@@ -307,7 +396,7 @@ Demo.Log.clear()
 {done.state, done.errors}
 ```
 
-## 7. Cancel
+## 8. Cancel
 
 ```elixir
 {:ok, job} =
@@ -321,7 +410,7 @@ Demo.Log.clear()
 Kathikon.cancel(job.id)
 ```
 
-## 8. Concurrency
+## 9. Concurrency
 
 ```elixir
 Demo.Log.clear()
@@ -334,7 +423,7 @@ Process.sleep(2_500)
 Demo.Log.entries()
 ```
 
-## 9. Pruning
+## 10. Pruning
 
 Terminal jobs are removed after `retention_period` (3s here).
 
@@ -347,7 +436,7 @@ Process.sleep(6_000)
 Kathikon.fetch(job.id)
 ```
 
-## 10. Inspect jobs
+## 11. Inspect jobs
 
 ```elixir
 Demo.job_table(Kathikon.all())
@@ -362,4 +451,5 @@ Kathikon.all() |> Enum.frequencies_by(& &1.state)
 ```elixir
 Kathikon.Storage.clear_jobs!()
 Demo.Log.clear()
+Demo.AsyncStore.reset!()
 ```

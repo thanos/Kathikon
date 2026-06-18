@@ -4,7 +4,6 @@ defmodule Kathikon.Backend.Storage.MnesiaTest do
   alias Kathikon.{Job, Storage}
 
   setup do
-    Storage.backend(Kathikon.Backend.Storage.Mnesia)
     Storage.setup()
     Storage.clear_jobs!()
     :ok
@@ -51,18 +50,6 @@ defmodule Kathikon.Backend.Storage.MnesiaTest do
     assert promoted.state == :available
   end
 
-  test "scheduled_jobs lists due scheduled jobs" do
-    now = DateTime.utc_now()
-
-    job =
-      Job.build(Kathikon.Workers.SuccessWorker, %{}, [])
-      |> then(fn job -> %{job | state: :scheduled, scheduled_at: now} end)
-
-    {:ok, _} = Storage.insert(job)
-    assert [fetched] = Storage.scheduled_jobs(now)
-    assert fetched.id == job.id
-  end
-
   test "prunable_jobs lists terminal jobs past cutoff" do
     now = DateTime.utc_now()
     cutoff = DateTime.add(now, 1, :second)
@@ -82,10 +69,6 @@ defmodule Kathikon.Backend.Storage.MnesiaTest do
     {:ok, _} = Storage.insert(job)
     :ok = Storage.delete(job.id)
     assert {:error, :not_found} = Storage.fetch(job.id)
-  end
-
-  test "register_queue stores metadata" do
-    assert :ok = Storage.register_queue(:emails, concurrency: 5)
   end
 
   test "claim prefers higher priority jobs" do

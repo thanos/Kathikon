@@ -2,11 +2,7 @@ defmodule Kathikon do
   @moduledoc """
   BEAM-native durable job queue and task execution platform.
 
-  Kathikon (Greek: καθήκον — duty, obligation) treats jobs as durable
-  obligations that must eventually be fulfilled: completed, retried,
-  cancelled, or discarded — but never silently lost.
-
-  ## Guides
+  See the [README](readme.html) for an overview. Guides:
 
     * [Quick start](docs/guides/quick-start.md)
     * [Workers](docs/guides/workers.md)

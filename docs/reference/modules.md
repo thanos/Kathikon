@@ -274,17 +274,23 @@ OTP application callback. Calls `Storage.setup/0` and starts the supervision tre
 
 Registered as `{:dispatcher, queue}` in `Kathikon.Registry`.
 
+`start_link/1` options: `:queue`, `:config`, `:poll_interval`, `:storage` (defaults to `Kathikon.Storage`).
+
 ### Kathikon.Scheduler
 
-`GenServer` — ticks on `scheduler_interval`, calls `Storage.promote_scheduled/1`.
+`GenServer` — ticks on `scheduler_interval`, calls `storage.promote_scheduled/1`.
 
-Registered as `Kathikon.Scheduler`.
+Registered as `Kathikon.Scheduler` when started by the application.
+
+`start_link/1` options: `:interval`, `:storage`, `:name` (`false` for unnamed test instances).
 
 ### Kathikon.Pruner
 
 `GenServer` — deletes terminal jobs past `retention_period`.
 
-Registered as `Kathikon.Pruner`.
+Registered as `Kathikon.Pruner` when started by the application.
+
+`start_link/1` options: `:interval`, `:storage`, `:name` (`false` for unnamed test instances).
 
 ---
 

@@ -89,10 +89,11 @@ Kathikon.Supervisor
 |--------|------|
 | `Kathikon.Job` | Job struct and state machine |
 | `Kathikon.Worker` | Worker behaviour (`perform/1`) |
-| `Kathikon.Storage` | Mnesia persistence and atomic claims |
+| `Kathikon.Storage` | Storage facade over `Kathikon.Backend.Storage` |
 | `Kathikon.Dispatcher` | Claims and executes jobs per queue |
 | `Kathikon.Scheduler` | Promotes scheduled jobs to available |
 | `Kathikon.Pruner` | Enforces retention on terminal jobs |
+| `Kathikon.Backend.Storage` | Storage behaviour (default: `…Mnesia`) |
 | `Kathikon.Telemetry` | `[:kathikon, ...]` telemetry events |
 
 ## Job states
@@ -105,15 +106,10 @@ scheduled → available → executing → completed
 
 ## Telemetry
 
-Kathikon emits standard telemetry events:
+Kathikon emits standard telemetry events. See [Telemetry guide](docs/guides/telemetry-and-observability.md) for the full list. Highlights:
 
-- `[:kathikon, :job, :insert]`
-- `[:kathikon, :job, :start]`
-- `[:kathikon, :job, :stop]`
-- `[:kathikon, :job, :retry]`
-- `[:kathikon, :job, :discard]`
-- `[:kathikon, :job, :cancel]`
-- `[:kathikon, :job, :prune]`
+- Job: `[:kathikon, :job, :insert]`, `:start`, `:stop`, `:sleep`, `:retry`, `:discard`, `:cancel`, `:prune`
+- Runtime: `[:kathikon, :scheduler, :tick]`, `[:kathikon, :pruner, :tick]`, `[:kathikon, :dispatcher, :poll]`
 
 Attach the default logger in development:
 
@@ -164,4 +160,4 @@ open doc/index.html
 
 ## License
 
-Apache 2.0 (placeholder — add license file before publishing)
+MIT. See [LICENSE](LICENSE).

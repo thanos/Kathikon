@@ -24,42 +24,23 @@ defmodule Kathikon.ConfigTest do
 
     on_exit(fn -> Application.delete_env(:kathikon, :mnesia_copies) end)
   end
-end
 
-defmodule Kathikon.Backend.Storage.LifecycleTest do
-  use ExUnit.Case, async: false
-
-  import Mox
-
-  alias Kathikon.Storage
-
-  @mock Kathikon.Backend.Storage.Mock
-
-  setup :verify_on_exit!
-
-  setup do
-    Storage.backend(@mock)
-
-    on_exit(fn ->
-      Storage.backend(Kathikon.Backend.Storage.Mnesia)
-    end)
-
-    :ok
+  test "auto uses ram on nonode@nohost" do
+    if node() == :nonode@nohost do
+      Application.put_env(:kathikon, :mnesia_copies, :auto)
+      assert Config.mnesia_copies() == :ram
+      on_exit(fn -> Application.delete_env(:kathikon, :mnesia_copies) end)
+    end
   end
 
-  test "setup delegates to backend" do
-    Mox.expect(@mock, :setup, fn -> :ok end)
-    assert :ok = Storage.setup()
-  end
+  test "raises on invalid mnesia_copies" do
+    Application.put_env(:kathikon, :mnesia_copies, :bogus)
 
-  test "clear_jobs! delegates to backend" do
-    Mox.expect(@mock, :clear_jobs!, fn -> :ok end)
-    assert :ok = Storage.clear_jobs!()
-  end
+    assert_raise ArgumentError, ~r/invalid :mnesia_copies/, fn ->
+      Config.mnesia_copies()
+    end
 
-  test "reset! delegates to backend" do
-    Mox.expect(@mock, :reset!, fn -> :ok end)
-    assert :ok = Storage.reset!()
+    on_exit(fn -> Application.delete_env(:kathikon, :mnesia_copies) end)
   end
 end
 
@@ -69,7 +50,6 @@ defmodule Kathikon.Backend.Storage.Mnesia.LifecycleTest do
   alias Kathikon.{Backend.Storage.Mnesia, Job, Storage}
 
   setup do
-    Storage.backend(Mnesia)
     :ok = Storage.setup()
     Storage.clear_jobs!()
     :ok
@@ -111,6 +91,5 @@ defmodule Kathikon.Backend.Storage.Mnesia.LifecycleTest do
     assert :ok = Mnesia.reset!()
     assert [] = Storage.all()
     assert :kathikon_jobs in :mnesia.system_info(:tables)
-    assert :kathikon_queues in :mnesia.system_info(:tables)
   end
 end

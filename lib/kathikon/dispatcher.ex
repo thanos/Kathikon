@@ -6,6 +6,12 @@ defmodule Kathikon.Dispatcher do
   `poll_interval`, atomically claims jobs, and spawns `Task`s up to the
   configured `concurrency`.
 
+  ## `start_link/1` options
+
+    * `:queue`, `:config`, `:poll_interval` — required queue settings
+    * `:storage` — module implementing `Kathikon.Backend.Storage` callbacks
+      (default `Kathikon.Storage`)
+
   Registered in `Kathikon.Registry` as `{:dispatcher, queue}`.
 
   See `docs/guides/queues-and-concurrency.md`.
@@ -31,11 +37,14 @@ defmodule Kathikon.Dispatcher do
     config = Keyword.fetch!(opts, :config)
     poll_interval = Keyword.get(opts, :poll_interval, Kathikon.Config.poll_interval())
 
+    storage = Keyword.get(opts, :storage, Storage)
+
     state = %{
       queue: queue,
       config: config,
       concurrency: Keyword.get(config, :concurrency, 10),
       poll_interval: poll_interval,
+      storage: storage,
       running: %{}
     }
 
@@ -74,7 +83,7 @@ defmodule Kathikon.Dispatcher do
     now = DateTime.utc_now()
 
     Enum.reduce(1..slots, state, fn _, acc ->
-      case Storage.claim(acc.queue, now) do
+      case acc.storage.claim(acc.queue, now) do
         {:ok, job} ->
           Telemetry.event([:dispatcher, :poll], %{count: 1}, %{queue: acc.queue, job_id: job.id})
           run_job(acc, job)
@@ -170,7 +179,7 @@ defmodule Kathikon.Dispatcher do
           {job, event_suffix, extra_metadata, attempt}
       end
 
-    Storage.update(updated)
+    state.storage.update(updated)
 
     metadata =
       Map.merge(

@@ -15,7 +15,7 @@ defmodule Kathikon.Queue do
 
   use DynamicSupervisor
 
-  alias Kathikon.{Config, Dispatcher, Storage}
+  alias Kathikon.{Config, Dispatcher}
 
   @name __MODULE__
 
@@ -35,7 +35,6 @@ defmodule Kathikon.Queue do
   @spec ensure_started(atom()) :: :ok
   def ensure_started(queue) when is_atom(queue) do
     config = Config.queue_config(queue)
-    Storage.register_queue(queue, config)
 
     case DynamicSupervisor.start_child(@name, {Dispatcher, queue: queue, config: config}) do
       {:ok, _pid} -> :ok

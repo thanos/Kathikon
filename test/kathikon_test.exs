@@ -41,6 +41,16 @@ defmodule Kathikon.JobTest do
     assert Job.backoff_seconds(3) == 45
   end
 
+  test "decode_payload round-trips a job struct" do
+    job = Job.build(Kathikon.Workers.SuccessWorker, %{"x" => 1}, queue: :default)
+    binary = Job.to_record(job) |> elem(2)
+    decoded = Job.decode_payload(binary)
+
+    assert decoded.worker == job.worker
+    assert decoded.args == job.args
+    assert decoded.queue == job.queue
+  end
+
   test "claimable? respects state and available_at" do
     now = DateTime.utc_now()
     future = DateTime.add(now, 60, :second)
@@ -103,22 +113,30 @@ defmodule Kathikon.IntegrationTest do
     assert cancelled.state == :cancelled
   end
 
+  test "sleep defers then completes without incrementing attempts" do
+    {:ok, job} = Kathikon.insert(Kathikon.Workers.SleepOnceWorker, %{})
+
+    assert {:ok, completed} = TestSupport.await_state(job.id, :completed, 10_000)
+    assert completed.attempts == 1
+    assert completed.errors == []
+  end
+
   test "higher priority jobs run first" do
     TestSupport.reset_order!()
     TestSupport.stop_dispatcher(:priority)
-    at = DateTime.add(DateTime.utc_now(), 2, :second)
+    past = DateTime.add(DateTime.utc_now(), -1, :second)
 
     {:ok, low} =
       Kathikon.insert(Kathikon.Workers.PriorityWorker, %{"label" => "low"},
         queue: :priority,
-        schedule_at: at,
+        schedule_at: past,
         priority: 1
       )
 
     {:ok, high} =
       Kathikon.insert(Kathikon.Workers.PriorityWorker, %{"label" => "high"},
         queue: :priority,
-        schedule_at: at,
+        schedule_at: past,
         priority: 10
       )
 
@@ -133,9 +151,11 @@ defmodule Kathikon.IntegrationTest do
 
   test "scheduler promotes scheduled jobs" do
     {:ok, job} =
-      Kathikon.insert(Kathikon.Workers.SuccessWorker, %{}, schedule_in: 1)
+      Kathikon.insert(Kathikon.Workers.SuccessWorker, %{}, schedule_in: 0)
 
     assert job.state == :scheduled
+    send(Kathikon.Scheduler, :tick)
+
     assert {:ok, completed} = TestSupport.await_state(job.id, :completed, 10_000)
     assert completed.state == :completed
   end

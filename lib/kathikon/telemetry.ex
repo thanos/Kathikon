@@ -22,6 +22,7 @@ defmodule Kathikon.Telemetry do
   ## Runtime events
 
     * `[:kathikon, :scheduler, :tick]` — scheduled jobs promoted
+    * `[:kathikon, :pruner, :tick]` — terminal jobs pruned
     * `[:kathikon, :dispatcher, :poll]` — job claimed
 
   See `docs/guides/telemetry-and-observability.md`.
@@ -52,6 +53,7 @@ defmodule Kathikon.Telemetry do
             [:job, :cancel],
             [:job, :prune],
             [:scheduler, :tick],
+            [:pruner, :tick],
             [:dispatcher, :poll]
           ] do
         @prefix ++ suffix

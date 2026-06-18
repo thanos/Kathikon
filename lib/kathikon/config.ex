@@ -65,7 +65,12 @@ defmodule Kathikon.Config do
     case get(:mnesia_copies, :auto) do
       :auto -> auto_mnesia_copies()
       mode when mode in [:ram, :disc] -> mode
+      other -> raise ArgumentError, invalid_mnesia_copies_message(other)
     end
+  end
+
+  defp invalid_mnesia_copies_message(mode) do
+    "invalid :mnesia_copies #{inspect(mode)}, expected :auto, :ram, or :disc"
   end
 
   defp auto_mnesia_copies do

@@ -52,7 +52,10 @@ defmodule Kathikon.MixProject do
 
   defp package do
     [
-      licenses: ["Apache-2.0"],
+      name: "Kathikon",
+      files: ~w(lib .formatter.exs mix.exs README.md LICENSE),
+      licenses: ["MIT"],
+      maintainers: ["Thanos Vassilakis"],
       links: %{"GitHub" => "https://github.com/thanos/Kathikon"}
     ]
   end
@@ -92,6 +95,7 @@ defmodule Kathikon.MixProject do
       "docs/guides/storage-and-embedding.md",
       "docs/reference/modules.md",
       "README.md",
+      LICENSE: [title: "License"],
       "docs/documentation.md": [title: "Documentation"],
       "livebooks/kathikon_demo.livemd": [title: "Interactive demo"]
     ]

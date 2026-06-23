@@ -40,6 +40,19 @@ Start here if you are new to the library:
 | [Module reference](reference/modules.md) | Every module and public function with examples |
 | [Interactive demo](../livebooks/kathikon_demo.livemd) | Livebook walkthrough |
 
+## Examples
+
+Runnable scripts in `examples/` at the project root — run with `mix run examples/<name>.exs`:
+
+| Script | Demonstrates |
+|--------|----------------|
+| `examples/basic_worker.exs` | Insert and poll status |
+| `examples/scheduled_job.exs` | `schedule` with `:at` / `:in` |
+| `examples/dead_letter_retry.exs` | Failures, dead letter, rerun |
+| `examples/batch_fanout_fanin.exs` | Parent/child batches |
+| `examples/reporting.exs` | `Kathikon.Report` summaries |
+| `examples/quantum_scheduler_adapter.exs` | Optional Quantum scheduler |
+
 ## Architecture at a glance
 
 ```
@@ -52,4 +65,4 @@ Kathikon.Supervisor
 └── Kathikon.Pruner         (deletes terminal jobs after retention)
 ```
 
-Public API: `Kathikon.insert/3`, `Kathikon.schedule/3`, `Kathikon.cancel/1`, `Kathikon.fetch/1`, `Kathikon.all/0`, `Kathikon.start_queue/1`.
+Public API: `Kathikon.insert/3`, `Kathikon.schedule/3`, `Kathikon.cancel/1`, `Kathikon.fetch/1`, `Kathikon.status/1`, `Kathikon.history/1`, `Kathikon.all/0`, `Kathikon.start_queue/1`, `Kathikon.claim/2`, `Kathikon.retry/2`, `Kathikon.dead_jobs/1`.

@@ -1,12 +1,12 @@
-defmodule Kathikon.Backend.Storage.Mnesia.IntegrationTest do
+defmodule Kathikon.Storage.Mnesia.IntegrationTest do
   @moduledoc false
 
   use ExUnit.Case, async: false
 
   @moduletag :integration
 
-  alias Kathikon.Backend.Storage.Mnesia
   alias Kathikon.{Job, Storage}
+  alias Kathikon.Storage.Mnesia
 
   setup do
     ensure_mnesia!()

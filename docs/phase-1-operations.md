@@ -1,5 +1,7 @@
 # Phase 1: Operations
 
+> **Historical:** This document describes Kathikon v0.1.0. For v0.2.0 behaviour see the [documentation index](documentation.md) and [job lifecycle](job_lifecycle.md). State names changed (`:executing` → `:claimed`/`:running`); the scheduler process is `Kathikon.Scheduler.Promoter`.
+
 Operational notes for running Kathikon v0.1.0 in development and early production.
 
 ## Deployment requirements
@@ -85,15 +87,15 @@ Kathikon.all()
 # Single job
 Kathikon.fetch("job_id")
 
-# Filter in IEx
-Kathikon.all() |> Enum.filter(&(&1.state == :executing))
+# Filter in IEx (v0.1 used :executing; v0.2 uses :claimed and :running)
+Kathikon.all() |> Enum.filter(&(&1.state in [:claimed, :running]))
 ```
 
 ## Common operational scenarios
 
-### Stuck jobs in `:executing`
+### Stuck jobs in `:executing` (v0.1) / `:claimed` or `:running` (v0.2)
 
-**Symptom:** Jobs remain `:executing` after worker crash.
+**Symptom:** Jobs remain in a running state after worker crash.
 
 **Phase 1 limitation:** No automatic recovery yet.
 
@@ -174,7 +176,7 @@ Minimal health check for a release:
 ```elixir
 def healthy? do
   :mnesia.system_info(:is_running) == :yes and
-    Process.whereis(Kathikon.Scheduler) != nil and
+    Process.whereis(Kathikon.Scheduler.Promoter) != nil and
     Process.whereis(Kathikon.Pruner) != nil
 end
 ```
@@ -183,7 +185,7 @@ end
 
 | Alert | Likely cause | Action |
 |-------|--------------|--------|
-| High `:executing` count | Worker crashes | Manual recovery; wait for Phase 2 |
+| High `:running` / `:claimed` count | Worker crashes | Manual recovery; wait for Phase 2 lifeline |
 | Growing job table | Pruner misconfigured | Check retention, restart pruner |
 | No job progress | Dispatcher down | Restart app, check queue config |
 | High discard rate | Worker logic errors | Fix worker, inspect `job.errors` |

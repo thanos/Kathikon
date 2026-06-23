@@ -17,13 +17,16 @@ cancelled.cancelled_at # DateTime.utc_now() at cancel time
 | `:scheduled` | Yes |
 | `:available` | Yes |
 | `:retryable` | Yes |
-| `:running` | **No** — `{:error, :executing}` |
+| `:running` | **No** — `{:error, :executing}` (legacy error name) |
 | `:claimed` | **Yes** |
+| `:failed` | **No** |
+| `:dead` | **No** |
+| `:waiting_for_children` | **No** |
 | `:completed` | **No** — `{:error, {:invalid_state, :completed}}` |
 | `:cancelled` | **No** — `{:error, {:invalid_state, :cancelled}}` |
 | `:discarded` | **No** — `{:error, {:invalid_state, :discarded}}` |
 
-Phase 1 does not interrupt in-flight `Task` processes. A job already running will finish even if you need to cancel it — design workers to check cancellation signals in Phase 4+ or use short tasks.
+Running jobs are not interrupted in v0.2.0. A job already in `:running` will finish even if you need to cancel it — design workers for short tasks or add cancellation checks in a future release.
 
 ## Example: cancel a scheduled newsletter
 

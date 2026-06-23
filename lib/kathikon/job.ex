@@ -96,10 +96,8 @@ defmodule Kathikon.Job do
           result_mode: :store | :discard
         }
 
-  @states StateMachine.states() ++ [:executing]
-
   @doc false
-  def states, do: @states
+  def states, do: StateMachine.states() ++ [:executing]
 
   @doc """
   Builds a new job from worker module, args, and options.

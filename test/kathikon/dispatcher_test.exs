@@ -37,115 +37,124 @@ defmodule Kathikon.DispatcherTest do
     |> Map.put(:available_at, DateTime.utc_now())
   end
 
-  defp expect_claim_and_start(work, queue) do
-    Mox.expect(@mock, :claim_available_jobs, fn ^queue, 1, _claimant ->
-      {:ok, [work]}
+  defp expect_claim_and_start(work, queue, test_pid \\ self()) do
+    running = Map.put(work, :state, :running)
+
+    Mox.expect(@mock, :claim_and_start_available_jobs, fn ^queue, 1, _claimant ->
+      {:ok, [running]}
     end)
 
-    Mox.expect(@mock, :start_job, fn ^work, _claimant, _now ->
-      {:ok, Map.put(work, :state, :running)}
-    end)
+    {running, test_pid}
+  end
+
+  defp poll_and_await(dispatcher, _test_pid) do
+    send(dispatcher, :poll)
+    assert_receive {:dispatcher_done, _}, 500
   end
 
   test "executes a claimed job successfully", %{dispatcher: dispatcher, queue: queue} do
     work = job(Kathikon.Workers.SuccessWorker, %{}, queue: queue)
-    expect_claim_and_start(work, queue)
+    {running, test_pid} = expect_claim_and_start(work, queue)
 
     Mox.expect(@mock, :complete_job, fn _id, :ok, _meta ->
-      {:ok, %{work | state: :completed, attempts: 1}}
+      send(test_pid, {:dispatcher_done, :complete})
+      {:ok, %{running | state: :completed, attempts: 1}}
     end)
 
-    send(dispatcher, :poll)
-    Process.sleep(100)
+    poll_and_await(dispatcher, test_pid)
   end
 
   test "retries failed jobs", %{dispatcher: dispatcher, queue: queue} do
     work = job(Kathikon.Workers.FailWorker, %{}, queue: queue, max_attempts: 3)
-    expect_claim_and_start(work, queue)
+    {running, test_pid} = expect_claim_and_start(work, queue)
 
     Mox.expect(@mock, :fail_job, fn id, _reason, _meta ->
       assert id == work.id
-      {:ok, %{work | state: :retryable, attempts: 1}}
+      send(test_pid, {:dispatcher_done, :fail})
+      {:ok, %{running | state: :retryable, attempts: 1}}
     end)
 
-    send(dispatcher, :poll)
-    Process.sleep(100)
+    poll_and_await(dispatcher, test_pid)
   end
 
   test "discards jobs after max attempts", %{dispatcher: dispatcher, queue: queue} do
     work = job(Kathikon.Workers.FailWorker, %{}, queue: queue, max_attempts: 1)
-    expect_claim_and_start(work, queue)
+    {running, test_pid} = expect_claim_and_start(work, queue)
 
     Mox.expect(@mock, :fail_job, fn id, _reason, _meta ->
       assert id == work.id
-      {:ok, %{work | state: :dead, attempts: 1}}
+      send(test_pid, {:dispatcher_done, :dead})
+      {:ok, %{running | state: :dead, attempts: 1}}
     end)
 
-    send(dispatcher, :poll)
-    Process.sleep(100)
+    poll_and_await(dispatcher, test_pid)
   end
 
   test "handles worker exceptions", %{dispatcher: dispatcher, queue: queue} do
     work = job(Kathikon.Workers.RaiseWorker, %{}, queue: queue)
-    expect_claim_and_start(work, queue)
+    {running, test_pid} = expect_claim_and_start(work, queue)
 
     Mox.expect(@mock, :fail_job, fn _id, {:exception, _, _}, _meta ->
-      {:ok, %{work | state: :retryable, errors: [%{reason: "boom"}]}}
+      send(test_pid, {:dispatcher_done, :exception})
+      {:ok, %{running | state: :retryable, errors: [%{reason: "boom"}]}}
     end)
 
-    send(dispatcher, :poll)
-    Process.sleep(100)
+    poll_and_await(dispatcher, test_pid)
   end
 
   test "defers jobs via {:sleep, seconds}", %{dispatcher: dispatcher, queue: queue} do
     work = job(Kathikon.Workers.SleepWorker, %{"seconds" => 60}, queue: queue)
-    expect_claim_and_start(work, queue)
+    {_running, test_pid} = expect_claim_and_start(work, queue)
 
-    Mox.expect(@mock, :update_job, fn id, changes ->
+    Mox.expect(@mock, :defer_job, fn id, at, meta ->
       assert id == work.id
-      assert changes.state == :scheduled
-      {:ok, Map.merge(work, Map.new(changes))}
+      assert %DateTime{} = at
+      assert meta[:seconds] == 60
+      send(test_pid, {:dispatcher_done, :defer})
+      {:ok, Map.merge(work, %{state: :scheduled, scheduled_at: at, available_at: at})}
     end)
 
-    send(dispatcher, :poll)
-    Process.sleep(100)
+    poll_and_await(dispatcher, test_pid)
   end
 
   test "treats invalid {:sleep, seconds} as failure", %{dispatcher: dispatcher, queue: queue} do
     work = job(Kathikon.Workers.SleepWorker, %{"seconds" => 0}, queue: queue)
-    expect_claim_and_start(work, queue)
+    {running, test_pid} = expect_claim_and_start(work, queue)
 
     Mox.expect(@mock, :fail_job, fn _, {:invalid_sleep, 0}, _ ->
-      {:ok, %{work | state: :retryable}}
+      send(test_pid, {:dispatcher_done, :invalid_sleep})
+      {:ok, %{running | state: :retryable}}
     end)
 
-    send(dispatcher, :poll)
-    Process.sleep(100)
+    poll_and_await(dispatcher, test_pid)
   end
 
   test "handles worker throws", %{dispatcher: dispatcher, queue: queue} do
     work = job(Kathikon.Workers.ThrowWorker, %{}, queue: queue)
-    expect_claim_and_start(work, queue)
+    {running, test_pid} = expect_claim_and_start(work, queue)
 
     Mox.expect(@mock, :fail_job, fn _, {:throw, :thrown}, _ ->
-      {:ok, %{work | state: :retryable}}
+      send(test_pid, {:dispatcher_done, :throw})
+      {:ok, %{running | state: :retryable}}
     end)
 
-    send(dispatcher, :poll)
-    Process.sleep(100)
+    poll_and_await(dispatcher, test_pid)
   end
 
   test "ignores claim errors", %{dispatcher: dispatcher, queue: queue} do
-    Mox.expect(@mock, :claim_available_jobs, fn ^queue, 1, _ -> {:error, :locked} end)
+    Mox.expect(@mock, :claim_and_start_available_jobs, fn ^queue, 1, _ ->
+      {:error, :locked}
+    end)
+
     send(dispatcher, :poll)
-    Process.sleep(50)
+    :sys.get_state(dispatcher)
     assert Process.alive?(dispatcher)
   end
 
   test "skips polling while queue is paused", %{dispatcher: dispatcher, queue: queue} do
     Kathikon.QueueControl.pause(queue)
 
-    Mox.expect(@mock, :claim_available_jobs, 0, fn _, _, _ ->
+    Mox.expect(@mock, :claim_and_start_available_jobs, 0, fn _, _, _ ->
       flunk("should not claim while paused")
     end)
 
@@ -156,14 +165,14 @@ defmodule Kathikon.DispatcherTest do
 
   test "stores worker return values", %{dispatcher: dispatcher, queue: queue} do
     work = job(Kathikon.Workers.ResultWorker, %{}, queue: queue)
-    expect_claim_and_start(work, queue)
+    {running, test_pid} = expect_claim_and_start(work, queue)
 
     Mox.expect(@mock, :complete_job, fn _id, %{value: 42}, _meta ->
-      {:ok, %{work | state: :completed, result: %{value: 42}}}
+      send(test_pid, {:dispatcher_done, :result})
+      {:ok, %{running | state: :completed, result: %{value: 42}}}
     end)
 
-    send(dispatcher, :poll)
-    Process.sleep(100)
+    poll_and_await(dispatcher, test_pid)
   end
 
   test "discards jobs when worker returns {:discard, reason}", %{
@@ -171,14 +180,14 @@ defmodule Kathikon.DispatcherTest do
     queue: queue
   } do
     work = job(Kathikon.Workers.DiscardWorker, %{}, queue: queue)
-    expect_claim_and_start(work, queue)
+    {running, test_pid} = expect_claim_and_start(work, queue)
 
     Mox.expect(@mock, :discard_job, fn _id, :not_wanted, _meta ->
-      {:ok, %{work | state: :discarded}}
+      send(test_pid, {:dispatcher_done, :discard})
+      {:ok, %{running | state: :discarded}}
     end)
 
-    send(dispatcher, :poll)
-    Process.sleep(100)
+    poll_and_await(dispatcher, test_pid)
   end
 
   test "forces retry when worker returns {:retry, reason}", %{
@@ -186,14 +195,14 @@ defmodule Kathikon.DispatcherTest do
     queue: queue
   } do
     work = job(Kathikon.Workers.ForceRetryWorker, %{}, queue: queue)
-    expect_claim_and_start(work, queue)
+    {running, test_pid} = expect_claim_and_start(work, queue)
 
     Mox.expect(@mock, :fail_job, fn _id, :try_again, meta ->
       assert meta[:force_retry]
-      {:ok, %{work | state: :retryable}}
+      send(test_pid, {:dispatcher_done, :force_retry})
+      {:ok, %{running | state: :retryable}}
     end)
 
-    send(dispatcher, :poll)
-    Process.sleep(100)
+    poll_and_await(dispatcher, test_pid)
   end
 end

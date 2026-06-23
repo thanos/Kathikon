@@ -31,6 +31,10 @@ defmodule Kathikon.Storage do
               | {:error, :not_found | :already_claimed | :not_claimable | term()}
   @callback claim_available_jobs(atom(), pos_integer(), map()) ::
               {:ok, [map()]} | {:ok, [Job.t()]} | {:error, term()}
+  @callback claim_and_start_available_jobs(atom(), pos_integer(), map()) ::
+              {:ok, [map()]} | {:ok, [Job.t()]} | {:error, term()}
+  @callback defer_job(String.t(), DateTime.t(), map()) ::
+              {:ok, map()} | {:ok, Job.t()} | {:error, term()}
   @callback complete_job(String.t(), term(), map()) ::
               {:ok, map()} | {:ok, Job.t()} | {:error, term()}
   @callback fail_job(String.t(), term(), map()) ::
@@ -60,6 +64,8 @@ defmodule Kathikon.Storage do
 
   @optional_callbacks [
     start_job: 3,
+    claim_and_start_available_jobs: 3,
+    defer_job: 3,
     insert: 1,
     update: 1,
     fetch: 1,
@@ -167,6 +173,28 @@ defmodule Kathikon.Storage do
   @doc false
   def claim_available_jobs(queue, limit, claimant),
     do: backend_module().claim_available_jobs(queue, limit, claimant)
+
+  @doc false
+  def claim_and_start_available_jobs(queue, limit, claimant),
+    do: backend_module().claim_and_start_available_jobs(queue, limit, claimant)
+
+  @doc false
+  def defer_job(id, scheduled_at, metadata),
+    do: backend_module().defer_job(id, scheduled_at, metadata)
+
+  @doc false
+  def fetch_batch(batch_id), do: backend_module().fetch_batch(batch_id)
+
+  @doc false
+  def write_batch(batch), do: backend_module().write_batch(batch)
+
+  @doc false
+  def start_batch(parent_id, child_jobs, batch_attrs),
+    do: backend_module().start_batch(parent_id, child_jobs, batch_attrs)
+
+  @doc false
+  def record_batch_child_finished(child_job),
+    do: backend_module().record_batch_child_finished(child_job)
 
   @doc false
   def complete_job(id, result, metadata), do: backend_module().complete_job(id, result, metadata)

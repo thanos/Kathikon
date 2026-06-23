@@ -10,6 +10,6 @@ config :kathikon,
   prune_interval: 60_000,
   retention_period: :timer.hours(24 * 7),
   max_attempts: 20,
-  storage_backend: Kathikon.Backend.Storage.Mnesia
+  storage_backend: Kathikon.Storage.Mnesia
 
 import_config "#{config_env()}.exs"

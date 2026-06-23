@@ -29,7 +29,7 @@ end
 |--------|--------|
 | `:ok` | Job → `:completed` |
 | `{:sleep, seconds}` | Job → `:scheduled` for `seconds`; not a failure (no `attempts` or `errors`) |
-| `{:error, reason}` | Job → `:retryable` with backoff, or `:discarded` if `max_attempts` exceeded |
+| `{:error, reason}` | Job → `:retryable` with backoff, or `:dead` if `max_attempts` exceeded |
 
 ```elixir
 # Success

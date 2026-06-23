@@ -46,6 +46,13 @@ defmodule Kathikon.TestSupport do
   def stub_storage_defaults! do
     Mox.stub(@mock, :claim, fn _, _ -> :not_found end)
     Mox.stub(@mock, :claim_available_jobs, fn _, _, _ -> {:ok, []} end)
+
+    Mox.stub(@mock, :claim_and_start_available_jobs, fn _, _, _ -> {:ok, []} end)
+
+    Mox.stub(@mock, :defer_job, fn id, at, _meta ->
+      {:ok, stub_job(id, state: :scheduled, scheduled_at: at, available_at: at)}
+    end)
+
     Mox.stub(@mock, :claim_job, fn _, _ -> {:error, :not_claimable} end)
 
     Mox.stub(@mock, :start_job, fn job, _claimant, _now ->

@@ -68,14 +68,11 @@ defmodule Kathikon do
     limit = Keyword.get(opts, :limit, 1)
     claimant = build_claimant(opts)
 
-    with {:ok, claimed} <- Storage.claim_available_jobs(queue, limit, claimant) do
-      running =
-        Enum.map(claimed, fn job ->
-          {:ok, started} = Storage.start_job(job, claimant)
-          Telemetry.event([:job, :claimed], %{}, metadata(started))
-          Telemetry.event([:job, :started], %{}, metadata(started))
-          started
-        end)
+    with {:ok, running} <- Storage.claim_and_start_available_jobs(queue, limit, claimant) do
+      for job <- running do
+        Telemetry.event([:job, :claimed], %{}, metadata(job))
+        Telemetry.event([:job, :started], %{}, metadata(job))
+      end
 
       {:ok, running}
     end

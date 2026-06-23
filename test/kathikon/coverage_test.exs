@@ -387,7 +387,7 @@ defmodule Kathikon.CoverageTest do
       assert status.status == :failed
 
       assert {:ok, updated_parent} = Storage.fetch(parent.id)
-      assert updated_parent.state in [:failed, :retryable, :dead]
+      assert updated_parent.state == :dead
     end
 
     test "batch succeeds with allow_partial and at_least policies" do

@@ -181,6 +181,70 @@ defmodule Kathikon.Storage.Mnesia do
     |> normalize_transaction()
   end
 
+  @doc """
+  Atomically claims and starts up to `limit` jobs from `queue`.
+
+  Returns running jobs so callers never observe a stranded `:claimed` state.
+  """
+  @spec claim_and_start_available_jobs(atom(), pos_integer(), map()) ::
+          {:ok, [Job.t()]} | {:error, term()}
+  @impl true
+  def claim_and_start_available_jobs(queue, limit, claimant) when limit > 0 do
+    now = DateTime.utc_now()
+
+    transaction(fn ->
+      all_jobs()
+      |> Enum.filter(fn job -> job.queue == queue and Job.claimable?(job, now) end)
+      |> sort_claimable()
+      |> Enum.take(limit)
+      |> Enum.map(fn job ->
+        claimed = write_claimed_job(job.id, job, claimant, now)
+        start_claimed_job!(claimed, claimant, now)
+      end)
+    end)
+    |> normalize_transaction()
+  end
+
+  @doc """
+  Defers a running job to `:scheduled` with a durable history event.
+  """
+  @spec defer_job(String.t(), DateTime.t(), map()) :: {:ok, Job.t()} | {:error, term()}
+  @impl true
+  def defer_job(job_id, scheduled_at, metadata) do
+    transaction(fn ->
+      job = fetch_job!(job_id)
+      from = job.state
+
+      if from != :running do
+        abort({:invalid_state, from})
+      end
+
+      deferred =
+        job
+        |> Map.merge(%{
+          state: :scheduled,
+          scheduled_at: scheduled_at,
+          available_at: scheduled_at,
+          started_at: nil,
+          claimed_at: nil,
+          claimant: nil
+        })
+        |> Job.normalize()
+
+      :ok = transition!(from, :scheduled)
+
+      commit_job_with_history!(
+        deferred,
+        job_id,
+        :deferred,
+        from,
+        :scheduled,
+        metadata
+      )
+    end)
+    |> normalize_transaction()
+  end
+
   @impl true
   def complete_job(job_id, result, metadata) do
     now = DateTime.utc_now()
@@ -525,20 +589,26 @@ defmodule Kathikon.Storage.Mnesia do
     transaction(fn ->
       current = fetch_job!(job_id)
 
-      if current.state != :claimed do
-        abort({:invalid_state, current.state})
+      case current.state do
+        :claimed ->
+          start_claimed_job!(current, claimant, now)
+
+        other ->
+          abort({:invalid_state, other})
       end
-
-      :ok = transition!(:claimed, :running)
-
-      running =
-        current
-        |> Map.merge(%{state: :running, started_at: now, node: Map.get(claimant, :node, node())})
-        |> Job.normalize()
-
-      commit_job_with_history!(running, job_id, :started, :claimed, :running, claimant)
     end)
     |> normalize_transaction()
+  end
+
+  defp start_claimed_job!(current, claimant, now) do
+    :ok = transition!(:claimed, :running)
+
+    running =
+      current
+      |> Map.merge(%{state: :running, started_at: now, node: Map.get(claimant, :node, node())})
+      |> Job.normalize()
+
+    commit_job_with_history!(running, current.id, :started, :claimed, :running, claimant)
   end
 
   @doc false
@@ -560,6 +630,105 @@ defmodule Kathikon.Storage.Mnesia do
     end)
     |> normalize_transaction()
   end
+
+  @doc """
+  Atomically transitions a parent to `:waiting_for_children`, inserts child jobs,
+  and writes the batch record.
+  """
+  @spec start_batch(String.t(), [Job.t()], map()) :: {:ok, map()} | {:error, term()}
+  def start_batch(parent_job_id, child_jobs, batch_attrs) when is_list(child_jobs) do
+    transaction(fn ->
+      parent = fetch_job!(parent_job_id)
+
+      unless parent.state == :running do
+        abort({:invalid_state, parent.state})
+      end
+
+      batch_id = Map.fetch!(batch_attrs, :batch_id)
+
+      parent =
+        parent
+        |> Map.merge(%{state: :waiting_for_children, batch_id: batch_id})
+        |> Job.normalize()
+
+      :ok = transition!(:running, :waiting_for_children)
+
+      _ =
+        commit_job_with_history!(
+          parent,
+          parent_job_id,
+          :child_created,
+          :running,
+          :waiting_for_children,
+          %{batch_id: batch_id, child_count: length(child_jobs)}
+        )
+
+      child_ids =
+        Enum.map(child_jobs, fn job ->
+          insert_batch_child!(Job.normalize(job), parent_job_id, batch_id)
+        end)
+
+      batch =
+        Map.merge(batch_attrs, %{
+          batch_id: batch_id,
+          parent_job_id: parent_job_id,
+          child_job_ids: child_ids,
+          pending_count: length(child_ids)
+        })
+
+      :mnesia.write({@batches, batch_id, :erlang.term_to_binary(batch)})
+
+      _ =
+        commit_job_with_history!(
+          parent,
+          parent_job_id,
+          :batch_started,
+          :running,
+          :waiting_for_children,
+          %{batch_id: batch_id, child_count: length(child_ids)}
+        )
+
+      batch
+    end)
+    |> normalize_transaction()
+  end
+
+  @doc """
+  Atomically updates batch counters for a finished child and returns completion intent.
+  """
+  @spec record_batch_child_finished(Job.t()) ::
+          {:ok, :pending, map()}
+          | {:ok, :complete, map(), Job.t()}
+          | {:ok, :fail, map(), Job.t()}
+          | {:error, term()}
+  def record_batch_child_finished(%Job{batch_id: batch_id} = child) when not is_nil(batch_id) do
+    transaction(fn ->
+      batch = fetch_batch!(batch_id)
+
+      if batch.status != :running or batch.pending_count <= 0 do
+        abort(:already_finished)
+      end
+
+      parent = fetch_job!(batch.parent_job_id)
+      batch = apply_child_to_batch(batch, child)
+
+      :mnesia.write({@batches, batch.batch_id, :erlang.term_to_binary(batch)})
+
+      cond do
+        batch.pending_count > 0 ->
+          {:pending, batch}
+
+        batch_succeeded?(batch) ->
+          {:complete, batch, parent}
+
+        true ->
+          {:fail, batch, parent}
+      end
+    end)
+    |> normalize_batch_child_transaction()
+  end
+
+  def record_batch_child_finished(_), do: {:ok, :ignored}
 
   @doc false
   def list_batches do
@@ -605,12 +774,101 @@ defmodule Kathikon.Storage.Mnesia do
     |> elem(1)
   end
 
+  defp insert_batch_child!(job, parent_job_id, batch_id) do
+    case read_job(job.id) do
+      nil ->
+        _ =
+          commit_job_with_history!(
+            job,
+            job.id,
+            :inserted,
+            nil,
+            job.state,
+            %{queue: job.queue, parent_job_id: parent_job_id, batch_id: batch_id}
+          )
+
+        _ =
+          commit_job_with_history!(
+            job,
+            job.id,
+            :child_created,
+            nil,
+            job.state,
+            %{parent_job_id: parent_job_id, batch_id: batch_id}
+          )
+
+        job.id
+
+      _ ->
+        abort({:already_exists, job.id})
+    end
+  end
+
   defp fetch_job!(id) do
     case read_job(id) do
       nil -> abort(:not_found)
       job -> job
     end
   end
+
+  defp fetch_batch!(batch_id) do
+    case :mnesia.read(@batches, batch_id) do
+      [{_, _, binary}] -> decode_term(binary)
+      [] -> abort(:not_found)
+    end
+  end
+
+  defp apply_child_to_batch(batch, child) do
+    case child.state do
+      :completed ->
+        %{
+          batch
+          | pending_count: batch.pending_count - 1,
+            success_count: batch.success_count + 1
+        }
+
+      state when state in [:failed, :dead, :discarded] ->
+        %{
+          batch
+          | pending_count: batch.pending_count - 1,
+            failure_count: batch.failure_count + 1
+        }
+
+      :cancelled ->
+        %{
+          batch
+          | pending_count: batch.pending_count - 1,
+            cancelled_count: batch.cancelled_count + 1
+        }
+
+      _ ->
+        batch
+    end
+  end
+
+  defp batch_succeeded?(%{success_policy: :all_succeeded, failure_count: 0, cancelled_count: 0}),
+    do: true
+
+  defp batch_succeeded?(%{success_policy: :allow_partial, success_count: s}) when s > 0, do: true
+
+  defp batch_succeeded?(%{success_policy: {:at_least, n}, success_count: s}), do: s >= n
+  defp batch_succeeded?(_), do: false
+
+  defp normalize_batch_child_transaction({:atomic, {:pending, batch}}),
+    do: {:ok, :pending, batch}
+
+  defp normalize_batch_child_transaction({:atomic, {:complete, batch, parent}}),
+    do: {:ok, :complete, batch, parent}
+
+  defp normalize_batch_child_transaction({:atomic, {:fail, batch, parent}}),
+    do: {:ok, :fail, batch, parent}
+
+  defp normalize_batch_child_transaction({:aborted, :not_found}), do: {:error, :not_found}
+
+  defp normalize_batch_child_transaction({:aborted, :already_finished}),
+    do: {:ok, :already_finished}
+
+  defp normalize_batch_child_transaction({:aborted, reason}), do: {:error, reason}
 
   defp read_job(id) do
     case :mnesia.read(@jobs, id) do

@@ -17,7 +17,8 @@ cancelled.cancelled_at # DateTime.utc_now() at cancel time
 | `:scheduled` | Yes |
 | `:available` | Yes |
 | `:retryable` | Yes |
-| `:executing` | **No** — `{:error, :executing}` |
+| `:running` | **No** — `{:error, :executing}` |
+| `:claimed` | **Yes** |
 | `:completed` | **No** — `{:error, {:invalid_state, :completed}}` |
 | `:cancelled` | **No** — `{:error, {:invalid_state, :cancelled}}` |
 | `:discarded` | **No** — `{:error, {:invalid_state, :discarded}}` |

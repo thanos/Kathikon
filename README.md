@@ -101,17 +101,17 @@ Kathikon.Supervisor
 ## Job states
 
 ```
-scheduled → available → executing → completed
-                    ↘           ↘ retryable → ...
-                      cancelled   discarded
+scheduled → available → claimed → running → completed
+                    ↘           ↘ retryable → available
+                      cancelled   failed → dead
 ```
 
 ## Telemetry
 
 Kathikon emits standard telemetry events. See [Telemetry guide](docs/guides/telemetry-and-observability.md) for the full list. Highlights:
 
-- Job: `[:kathikon, :job, :insert]`, `:start`, `:stop`, `:sleep`, `:retry`, `:discard`, `:cancel`, `:prune`
-- Runtime: `[:kathikon, :scheduler, :tick]`, `[:kathikon, :pruner, :tick]`, `[:kathikon, :dispatcher, :poll]`
+- Job: `[:kathikon, :job, :inserted]`, `:claimed`, `:started`, `:completed`, `:failed`, `:sleep`, `:retry`, `:discard`, `:cancel`, `:dead`, `:prune`
+- Runtime: `[:kathikon, :scheduler, :tick]`, `[:kathikon, :scheduler, :fired]`, `[:kathikon, :pruner, :tick]`, `[:kathikon, :dispatcher, :poll]`
 
 Attach the default logger in development:
 
@@ -135,12 +135,12 @@ Kathikon.Telemetry.attach_default_logger()
 
 | Phase | Focus |
 |-------|-------|
-| 1 | Durable job queue (current) |
+| 1 | Durable job queue (done) |
 | 2 | Distributed coordination, leases, lifeline |
-| 3 | Cron, uniqueness, dynamic queues |
-| 4 | Rate limits, pause/resume |
-| 5 | Batches |
-| 6 | Observability APIs |
+| 3 | Uniqueness, dynamic queues (cron done in v0.2) |
+| 4 | Rate limits (pause/resume done in v0.2) |
+| 5 | Batches (done in v0.2) |
+| 6 | Observability APIs (reporting done in v0.2) |
 | 7 | Workflows and DAGs |
 | 8 | Optional LiveView dashboard |
 

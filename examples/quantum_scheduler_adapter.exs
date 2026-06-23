@@ -1,6 +1,11 @@
 # Quantum scheduler adapter example (requires :quantum in mix.exs)
 # Run: mix run examples/quantum_scheduler_adapter.exs
 
+defmodule MyWorker do
+  use Kathikon.Worker
+  def perform(_), do: :ok
+end
+
 IO.puts("""
 Configure before use:
 
@@ -13,8 +18,3 @@ Without Quantum loaded, schedule_recurring returns:
 """)
 
 IO.inspect(Kathikon.Scheduler.Quantum.schedule_recurring(MyWorker, %{}, cron: "0 * * * *"))
-
-defmodule MyWorker do
-  use Kathikon.Worker
-  def perform(_), do: :ok
-end

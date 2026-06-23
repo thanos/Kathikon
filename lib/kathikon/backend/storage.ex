@@ -61,6 +61,28 @@ defmodule Kathikon.Backend.Storage do
     do: Mnesia.claim_available_jobs(queue, limit, claimant)
 
   @doc false
+  def claim_and_start_available_jobs(queue, limit, claimant),
+    do: Mnesia.claim_and_start_available_jobs(queue, limit, claimant)
+
+  @doc false
+  def defer_job(id, scheduled_at, metadata),
+    do: Mnesia.defer_job(id, scheduled_at, metadata)
+
+  @doc false
+  def fetch_batch(batch_id), do: Mnesia.fetch_batch(batch_id)
+
+  @doc false
+  def write_batch(batch), do: Mnesia.write_batch(batch)
+
+  @doc false
+  def start_batch(parent_id, child_jobs, batch_attrs),
+    do: Mnesia.start_batch(parent_id, child_jobs, batch_attrs)
+
+  @doc false
+  def record_batch_child_finished(child_job),
+    do: Mnesia.record_batch_child_finished(child_job)
+
+  @doc false
   def complete_job(id, result, metadata), do: Mnesia.complete_job(id, result, metadata)
 
   @doc false

@@ -135,7 +135,7 @@ defmodule Kathikon.MixProject do
       {"compile --warnings-as-errors", :dev},
       {"format --check-formatted", :dev},
       {"credo --strict", :dev},
-      # {"sobelow --config", :dev},
+      {"sobelow --exit Low", :dev},
       {"dialyzer", :dev},
       {"test --cover", :test},
       {"docs --warnings-as-errors", :dev}

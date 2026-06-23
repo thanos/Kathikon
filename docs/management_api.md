@@ -37,3 +37,13 @@ Kathikon.history(job_id)
 CLI: `mix kathikon.ops summary`
 
 Remote: `mix kathikon.ops --node kathikon@host summary` (via `Kathikon.Dashboard.RPC`).
+
+Both nodes must share the same Erlang cookie. The machine running `mix kathikon.ops` must be a **named node**, for example:
+
+```bash
+# Terminal 1 — remote Kathikon node
+elixir --name kathikon@127.0.0.1 --cookie SECRET -S mix run --no-halt
+
+# Terminal 2 — ops CLI
+elixir --name ops@127.0.0.1 --cookie SECRET -S mix kathikon.ops --node kathikon@127.0.0.1 summary
+```

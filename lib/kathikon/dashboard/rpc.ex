@@ -22,8 +22,7 @@ defmodule Kathikon.Dashboard.RPC do
 
   Returns `{:ok, result}`, `{:error, :badrpc}`, or `{:error, :nodedown}`.
   """
-  @spec call(node(), atom(), [term()], timeout()) ::
-          {:ok, term()} | {:error, :badrpc | :nodedown | term()}
+  @spec call(node(), atom(), [term()], timeout()) :: term() | {:error, :badrpc | :nodedown | term()}
   def call(node, fun, args \\ [], timeout \\ @default_timeout)
       when is_atom(fun) and is_list(args) do
     unless allowed?(fun) do
@@ -32,7 +31,7 @@ defmodule Kathikon.Dashboard.RPC do
       case :rpc.call(node, Kathikon.Dashboard, fun, args, timeout) do
         {:badrpc, :nodedown} -> {:error, :nodedown}
         {:badrpc, reason} -> {:error, {:badrpc, reason}}
-        result -> {:ok, result}
+        result -> result
       end
     end
   end

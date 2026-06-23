@@ -1,53 +1,55 @@
 defmodule Kathikon.Scheduler do
   @moduledoc """
-  Promotes scheduled jobs to `:available` when their time arrives.
+  Scheduling facade for Kathikon.
 
-  Ticks every `scheduler_interval` ms. Promotion runs in a single Mnesia
-  transaction via the configured storage module (default `Kathikon.Storage`).
+  Delegates to the configured scheduler adapter (default: `Kathikon.Scheduler.BuiltIn`).
 
-  ## `start_link/1` options
+      config :kathikon, scheduler: Kathikon.Scheduler.BuiltIn
 
-    * `:interval` — tick period in ms (default from `Kathikon.Config`)
-    * `:storage` — module implementing `Kathikon.Backend.Storage` callbacks
-    * `:name` — registered name (default `Kathikon.Scheduler`; use `false` in tests)
-
-  See `docs/guides/scheduling.md`.
+  See `docs/scheduling.md`.
   """
 
-  use GenServer
-
-  alias Kathikon.{Storage, Telemetry}
-
-  @tick :tick
-
-  def start_link(opts \\ []) do
-    {name, opts} = Keyword.pop(opts, :name, __MODULE__)
-    server_opts = if name in [false, nil], do: [], else: [name: name]
-    GenServer.start_link(__MODULE__, opts, server_opts)
-  end
-
-  @impl true
-  def init(opts) do
-    interval = Keyword.get(opts, :interval, Kathikon.Config.scheduler_interval())
-    storage = Keyword.get(opts, :storage, Storage)
-    schedule_tick(interval)
-    {:ok, %{interval: interval, storage: storage}}
-  end
-
-  @impl true
-  def handle_info(@tick, state) do
-    now = DateTime.utc_now()
-    promoted = state.storage.promote_scheduled(now)
-
-    if promoted > 0 do
-      Telemetry.event([:scheduler, :tick], %{promoted: promoted}, %{})
+  @doc """
+  Schedules a one-time job at a datetime, after a duration, or with a cron expression.
+  """
+  @spec schedule(module(), map(), keyword()) :: {:ok, term()} | {:error, term()}
+  def schedule(worker, args, opts \\ []) when is_atom(worker) and is_map(args) do
+    if Keyword.has_key?(opts, :cron) do
+      adapter().schedule_recurring(worker, args, opts)
+    else
+      adapter().schedule_once(worker, args, opts)
     end
-
-    schedule_tick(state.interval)
-    {:noreply, state}
   end
 
-  defp schedule_tick(interval) do
-    Process.send_after(self(), @tick, interval)
+  @doc """
+  Updates a recurring schedule in place (cron, worker, args, queue, and other opts).
+
+  Changing `:cron` resets the last-fired timestamp so the new expression can match
+  on the next tick.
+  """
+  @spec update_schedule(term(), keyword()) :: {:ok, map()} | {:error, term()}
+  def update_schedule(schedule_id, opts), do: adapter().update_schedule(schedule_id, opts)
+
+  @doc """
+  Fetches a registered recurring schedule by id.
+  """
+  @spec fetch_schedule(term()) :: {:ok, map()} | {:error, term()}
+  def fetch_schedule(schedule_id), do: adapter().fetch_schedule(schedule_id)
+
+  @doc """
+  Cancels a registered recurring schedule.
+  """
+  @spec cancel_schedule(term()) :: :ok | {:error, term()}
+  def cancel_schedule(schedule_id), do: adapter().cancel_schedule(schedule_id)
+
+  @doc """
+  Lists registered schedules from the active adapter.
+  """
+  @spec list_schedules(keyword()) :: {:ok, [map()]} | {:error, term()}
+  def list_schedules(opts \\ []), do: adapter().list_schedules(opts)
+
+  @doc false
+  def adapter do
+    Application.get_env(:kathikon, :scheduler, Kathikon.Scheduler.BuiltIn)
   end
 end

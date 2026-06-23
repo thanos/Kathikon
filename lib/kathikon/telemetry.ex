@@ -3,29 +3,6 @@ defmodule Kathikon.Telemetry do
   Telemetry events emitted by Kathikon.
 
   All events are prefixed with `[:kathikon, ...]`.
-
-  ## Attach default logger
-
-      Kathikon.Telemetry.attach_default_logger()
-
-  ## Job events
-
-    * `[:kathikon, :job, :insert]` — job enqueued
-    * `[:kathikon, :job, :start]` — `perform/1` started
-    * `[:kathikon, :job, :stop]` — success (`metadata.result: :ok`)
-    * `[:kathikon, :job, :sleep]` — deferred via `{:sleep, seconds}` (not a failure)
-    * `[:kathikon, :job, :retry]` — failure with retries remaining
-    * `[:kathikon, :job, :discard]` — max attempts exceeded
-    * `[:kathikon, :job, :cancel]` — job cancelled
-    * `[:kathikon, :job, :prune]` — terminal job deleted
-
-  ## Runtime events
-
-    * `[:kathikon, :scheduler, :tick]` — scheduled jobs promoted
-    * `[:kathikon, :pruner, :tick]` — terminal jobs pruned
-    * `[:kathikon, :dispatcher, :poll]` — job claimed
-
-  See `docs/guides/telemetry-and-observability.md`.
   """
 
   require Logger
@@ -44,15 +21,24 @@ defmodule Kathikon.Telemetry do
   def attach_default_logger do
     events =
       for suffix <- [
+            [:job, :inserted],
             [:job, :insert],
-            [:job, :start],
+            [:job, :claimed],
+            [:job, :started],
+            [:job, :completed],
+            [:job, :failed],
+            [:job, :retried],
+            [:job, :dead],
             [:job, :stop],
             [:job, :sleep],
             [:job, :retry],
             [:job, :discard],
             [:job, :cancel],
             [:job, :prune],
+            [:batch, :started],
+            [:batch, :completed],
             [:scheduler, :tick],
+            [:scheduler, :fired],
             [:pruner, :tick],
             [:dispatcher, :poll]
           ] do

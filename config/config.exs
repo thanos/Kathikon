@@ -1,6 +1,9 @@
 import Config
 
+config :elixir, :time_zone_database, Tzdata.TimeZoneDatabase
+
 config :kathikon,
+  timezone: "Etc/UTC",
   queues: [default: [concurrency: 10]],
   poll_interval: 200,
   scheduler_interval: 1_000,

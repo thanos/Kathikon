@@ -8,21 +8,23 @@ Kathikon uses **Mnesia** as its coordination store and **OTP** as its execution 
 
 ## Status
 
-**v0.1.0 — Phase 1: Durable Job Queue**
+**v0.2.0 — Control, scheduling, batches, and correctness**
 
-- Job insertion and queue execution
-- Retries with exponential backoff
-- Scheduling (`schedule_in`, `schedule_at`)
-- Priorities
-- Telemetry
-- Pruning / retention
+- Storage behaviour with atomic lifecycle operations
+- Formal job state machine and durable history
+- Dead-letter queue with rerun semantics
+- `Kathikon.schedule/3` and scheduler adapters (built-in + optional Quantum)
+- Management and reporting APIs
+- Parent/child batch workflows
+
+Previous: **v0.1.0 — Phase 1: Durable Job Queue**
 
 ## Installation
 
 ```elixir
 def deps do
   [
-    {:kathikon, "~> 0.1.0"}
+    {:kathikon, "~> 0.2.0"}
   ]
 end
 ```
@@ -81,7 +83,7 @@ Kathikon.Supervisor
 ├── Registry
 ├── Kathikon.Queue (DynamicSupervisor)
 │   └── Kathikon.Dispatcher (one per queue)
-├── Kathikon.Scheduler
+├── Kathikon.Scheduler.Promoter
 └── Kathikon.Pruner
 ```
 
@@ -89,11 +91,11 @@ Kathikon.Supervisor
 |--------|------|
 | `Kathikon.Job` | Job struct and state machine |
 | `Kathikon.Worker` | Worker behaviour (`perform/1`) |
-| `Kathikon.Storage` | Storage facade over `Kathikon.Backend.Storage` |
-| `Kathikon.Dispatcher` | Claims and executes jobs per queue |
-| `Kathikon.Scheduler` | Promotes scheduled jobs to available |
+| `Kathikon.Storage` | Storage behaviour (default: `Kathikon.Storage.Mnesia`) |
+| `Kathikon.Report` | Queue/job reporting helpers |
+| `Kathikon.Batch` | Fan-out/fan-in batch workflows |
+| `Kathikon.Scheduler.Promoter` | Promotes scheduled jobs to available |
 | `Kathikon.Pruner` | Enforces retention on terminal jobs |
-| `Kathikon.Backend.Storage` | Storage behaviour (default: `…Mnesia`) |
 | `Kathikon.Telemetry` | `[:kathikon, ...]` telemetry events |
 
 ## Job states

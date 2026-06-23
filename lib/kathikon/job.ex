@@ -2,26 +2,24 @@ defmodule Kathikon.Job do
   @moduledoc """
   Represents a durable job obligation in Kathikon.
 
-  Jobs move through explicit states:
+  Jobs move through explicit states enforced by `Kathikon.Job.StateMachine`:
 
-    * `:scheduled` — waiting until `scheduled_at` (enqueue delay or `{:sleep, seconds}`)
-    * `:available` — ready for a dispatcher to claim
-    * `:executing` — currently being processed
+    * `:scheduled` — waiting until `scheduled_at`
+    * `:available` — ready to be claimed
+    * `:claimed` — atomically claimed, not yet running
+    * `:running` — currently being processed (v0.1 `:executing`)
     * `:retryable` — failed but will be retried after backoff
+    * `:waiting_for_children` — batch parent waiting on child jobs
     * `:completed` — successfully finished
+    * `:failed` — exhausted retries or terminal worker failure
+    * `:dead` — in the dead-letter queue
     * `:cancelled` — explicitly cancelled
-    * `:discarded` — exhausted retries or permanently failed
+    * `:discarded` — permanently discarded
 
-  ## Example
-
-      {:ok, job} = Kathikon.insert(MyWorker, %{"key" => "value"})
-      job.id
-      job.state       # :available
-      job.worker      # MyWorker
-      job.args        # %{"key" => "value"}
-
-  See `docs/guides/workers.md` and `docs/reference/modules.md`.
+  See `docs/job_lifecycle.md`.
   """
+
+  alias Kathikon.Job.StateMachine
 
   @enforce_keys [:id, :queue, :worker, :args, :state]
   defstruct [
@@ -30,16 +28,29 @@ defmodule Kathikon.Job do
     :worker,
     :args,
     :state,
+    :result,
+    :error,
+    :last_error,
+    :parent_job_id,
+    :batch_id,
+    :rerun_of,
+    :original_job_id,
+    :claimant,
     priority: 0,
     max_attempts: 20,
     attempts: 0,
     scheduled_at: nil,
     available_at: nil,
     inserted_at: nil,
+    claimed_at: nil,
     started_at: nil,
     completed_at: nil,
+    failed_at: nil,
+    discarded_at: nil,
     cancelled_at: nil,
-    errors: []
+    node: nil,
+    errors: [],
+    result_mode: :store
   ]
 
   @type t :: %__MODULE__{
@@ -50,32 +61,42 @@ defmodule Kathikon.Job do
           state:
             :scheduled
             | :available
+            | :claimed
+            | :running
             | :executing
             | :retryable
+            | :waiting_for_children
             | :completed
+            | :failed
+            | :dead
             | :cancelled
             | :discarded,
+          result: term(),
+          error: term(),
+          last_error: term(),
+          parent_job_id: String.t() | nil,
+          batch_id: String.t() | nil,
+          rerun_of: String.t() | nil,
+          original_job_id: String.t() | nil,
+          claimant: map() | nil,
           priority: non_neg_integer(),
           max_attempts: pos_integer(),
           attempts: non_neg_integer(),
           scheduled_at: DateTime.t() | nil,
           available_at: DateTime.t() | nil,
           inserted_at: DateTime.t() | nil,
+          claimed_at: DateTime.t() | nil,
           started_at: DateTime.t() | nil,
           completed_at: DateTime.t() | nil,
+          failed_at: DateTime.t() | nil,
+          discarded_at: DateTime.t() | nil,
           cancelled_at: DateTime.t() | nil,
-          errors: [map()]
+          node: node() | nil,
+          errors: [map()],
+          result_mode: :store | :discard
         }
 
-  @states [
-    :scheduled,
-    :available,
-    :executing,
-    :retryable,
-    :completed,
-    :cancelled,
-    :discarded
-  ]
+  @states StateMachine.states() ++ [:executing]
 
   @doc false
   def states, do: @states
@@ -83,18 +104,7 @@ defmodule Kathikon.Job do
   @doc """
   Builds a new job from worker module, args, and options.
 
-  Prefer `Kathikon.insert/3` for enqueueing — it persists the job and
-  starts the queue dispatcher.
-
-  ## Options
-
-  Same as `Kathikon.insert/3`: `:queue`, `:priority`, `:max_attempts`,
-  `:schedule_in`, `:schedule_at`.
-
-  ## Example
-
-      job = Kathikon.Job.build(MyWorker, %{"x" => 1}, queue: :default)
-      job.state  # :available
+  Prefer `Kathikon.insert/3` for enqueueing.
   """
   @spec build(module(), map(), keyword()) :: t()
   def build(worker, args, opts) do
@@ -102,6 +112,7 @@ defmodule Kathikon.Job do
     queue = Keyword.get(opts, :queue, :default)
     priority = Keyword.get(opts, :priority, 0)
     max_attempts = Keyword.get(opts, :max_attempts, Kathikon.Config.max_attempts())
+    result_mode = Keyword.get(opts, :result, :store)
 
     {state, scheduled_at, available_at} = schedule_fields(opts, now)
 
@@ -117,39 +128,34 @@ defmodule Kathikon.Job do
       scheduled_at: scheduled_at,
       available_at: available_at,
       inserted_at: now,
-      errors: []
+      errors: [],
+      result_mode: result_mode,
+      original_job_id: Keyword.get(opts, :original_job_id),
+      rerun_of: Keyword.get(opts, :rerun_of),
+      parent_job_id: Keyword.get(opts, :parent_job_id),
+      batch_id: Keyword.get(opts, :batch_id)
     }
   end
 
   @doc """
   Returns true when the job can be claimed for execution at `now`.
-
-  A job is claimable when its state is `:available` or `:retryable` and
-  `available_at` is not in the future.
-
-  ## Example
-
-      job = Kathikon.Job.build(MyWorker, %{}, schedule_in: 60)
-      Kathikon.Job.claimable?(job, DateTime.utc_now())  # false
-
-      {:ok, job} = Kathikon.fetch(job_id)
-      Kathikon.Job.claimable?(job, DateTime.utc_now())  # true when due
   """
   @spec claimable?(t(), DateTime.t()) :: boolean()
   def claimable?(%__MODULE__{state: state, available_at: available_at}, now) do
-    state in [:available, :retryable] and DateTime.compare(available_at, now) != :gt
+    state in [:available, :retryable] and
+      available_at != nil and
+      DateTime.compare(available_at, now) != :gt
   end
 
   @doc """
+  Normalizes legacy `:executing` to `:running`.
+  """
+  @spec normalize(t()) :: t()
+  def normalize(%__MODULE__{state: :executing} = job), do: %{job | state: :running}
+  def normalize(%__MODULE__{} = job), do: job
+
+  @doc """
   Computes exponential backoff in seconds for the given attempt number.
-
-  Formula: `min(attempt² × 5, 86400)` seconds (minimum 1 for attempt ≤ 0).
-
-  ## Examples
-
-      Kathikon.Job.backoff_seconds(1)  # 5
-      Kathikon.Job.backoff_seconds(2)  # 20
-      Kathikon.Job.backoff_seconds(3)  # 45
   """
   @spec backoff_seconds(non_neg_integer()) :: non_neg_integer()
   def backoff_seconds(attempt) when attempt <= 0, do: 1
@@ -160,19 +166,14 @@ defmodule Kathikon.Job do
 
   @doc false
   def to_record(%__MODULE__{} = job) do
-    {:kathikon_jobs, job.id, :erlang.term_to_binary(job)}
+    {:kathikon_jobs, job.id, :erlang.term_to_binary(normalize(job))}
   end
 
-  @doc """
-  Deserializes a job payload written by `to_record/1`.
-
-  Uses `:erlang.binary_to_term/2` with `[:safe]`. Payloads are produced
-  internally by Kathikon on the same node; this is not an untrusted boundary
-  in Phase 1.
-  """
-  @spec decode_payload(binary()) :: t()
+  @doc false
   def decode_payload(binary) when is_binary(binary) do
-    :erlang.binary_to_term(binary, [:safe])
+    binary
+    |> :erlang.binary_to_term([:safe])
+    |> normalize()
   end
 
   @doc false
@@ -181,13 +182,34 @@ defmodule Kathikon.Job do
     %{job | id: id}
   end
 
+  @doc """
+  Converts a job struct to a map for storage callbacks and reporting.
+  """
+  @spec to_map(t()) :: %{atom() => term()}
+  def to_map(%__MODULE__{} = job) do
+    job
+    |> normalize()
+    |> Map.from_struct()
+    |> Map.put(:attempt, job.attempts)
+  end
+
+  @doc """
+  Returns job history events from storage.
+  """
+  @spec history(String.t()) :: {:ok, [map()]} | {:error, term()}
+  def history(job_id) when is_binary(job_id) do
+    Kathikon.Storage.list_history(job_id)
+  end
+
   defp schedule_fields(opts, now) do
     cond do
       schedule_at = Keyword.get(opts, :schedule_at) ->
-        if DateTime.compare(schedule_at, now) == :gt do
-          {:scheduled, schedule_at, schedule_at}
+        {:ok, at_utc} = Kathikon.Timezone.normalize_schedule_at(schedule_at)
+
+        if DateTime.compare(at_utc, now) == :gt do
+          {:scheduled, at_utc, at_utc}
         else
-          {:available, schedule_at, now}
+          {:available, at_utc, now}
         end
 
       schedule_in = Keyword.get(opts, :schedule_in) ->

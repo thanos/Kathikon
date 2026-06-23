@@ -37,9 +37,51 @@ defmodule Kathikon.Backend.Storage.Mnesia.IntegrationTest do
 
   defp delete_table!(table) do
     case :mnesia.delete_table(table) do
-      :ok -> :ok
       {:atomic, :ok} -> :ok
+      :ok -> :ok
+      {:aborted, {:no_exists, ^table}} -> :ok
+      {:aborted, {:no_exists, ^table, _}} -> :ok
       other -> flunk("unexpected delete_table result: #{inspect(other)}")
+    end
+  end
+
+  defp suspend_kathikon_runtime! do
+    for name <- [Kathikon.Scheduler.Promoter, Kathikon.Pruner] do
+      case Process.whereis(name) do
+        nil -> :ok
+        pid -> :sys.suspend(pid)
+      end
+    end
+
+    for queue <- Kathikon.Config.queue_names() do
+      case Registry.lookup(Kathikon.Registry, {:dispatcher, queue}) do
+        [{pid, _}] -> :sys.suspend(pid)
+        [] -> :ok
+      end
+    end
+  end
+
+  defp resume_kathikon_runtime! do
+    for name <- [Kathikon.Scheduler.Promoter, Kathikon.Pruner] do
+      case Process.whereis(name) do
+        nil -> :ok
+        pid -> :sys.resume(pid)
+      end
+    end
+
+    for queue <- Kathikon.Config.queue_names() do
+      case Registry.lookup(Kathikon.Registry, {:dispatcher, queue}) do
+        [{pid, _}] -> :sys.resume(pid)
+        [] -> :ok
+      end
+    end
+  end
+
+  defp refute_table!(table) do
+    if table in :mnesia.system_info(:tables) do
+      flunk(
+        "expected #{inspect(table)} to be absent, found: #{inspect(:mnesia.system_info(:tables))}"
+      )
     end
   end
 
@@ -95,11 +137,20 @@ defmodule Kathikon.Backend.Storage.Mnesia.IntegrationTest do
   end
 
   test "clear_jobs! is a no-op when the jobs table does not exist" do
+    suspend_kathikon_runtime!()
+
+    on_exit(fn ->
+      resume_kathikon_runtime!()
+      ensure_mnesia!()
+      Storage.setup()
+    end)
+
     assert :kathikon_jobs in :mnesia.system_info(:tables)
-    :ok = delete_table!(:kathikon_jobs)
-    refute :kathikon_jobs in :mnesia.system_info(:tables)
+    assert :ok = delete_table!(:kathikon_jobs)
+    refute_table!(:kathikon_jobs)
 
     assert :ok = Mnesia.clear_jobs!()
+    refute_table!(:kathikon_jobs)
   end
 
   test "reset! bootstraps storage when mnesia is stopped" do
@@ -202,7 +253,7 @@ defmodule Kathikon.Backend.Storage.Mnesia.IntegrationTest do
 
     assert {:ok, claimed} = Storage.claim(:default, now)
     assert claimed.id == job.id
-    assert claimed.state == :executing
+    assert claimed.state == :running
   end
 
   test "promote_scheduled returns zero when no jobs are due" do

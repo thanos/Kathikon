@@ -18,25 +18,29 @@ defmodule Kathikon.ApiTest do
   end
 
   test "cancel rejects completed jobs" do
-    job = sample_job(:completed)
+    _job = sample_job(:completed)
 
-    Mox.expect(Kathikon.Backend.Storage.Mock, :fetch, fn "id" -> {:ok, job} end)
+    Mox.expect(Kathikon.Backend.Storage.Mock, :cancel_job, fn "id", _, _ ->
+      {:error, {:invalid_state, :completed}}
+    end)
 
     assert {:error, {:invalid_state, :completed}} = Kathikon.cancel("id")
   end
 
-  test "cancel rejects executing jobs" do
-    job = sample_job(:executing)
+  test "cancel rejects running jobs" do
+    _job = sample_job(:running)
 
-    Mox.expect(Kathikon.Backend.Storage.Mock, :fetch, fn "id" -> {:ok, job} end)
+    Mox.expect(Kathikon.Backend.Storage.Mock, :cancel_job, fn "id", _, _ ->
+      {:error, :running}
+    end)
 
     assert {:error, :executing} = Kathikon.cancel("id")
   end
 
   test "cancel rejects discarded jobs" do
-    job = sample_job(:discarded)
-
-    Mox.expect(Kathikon.Backend.Storage.Mock, :fetch, fn "id" -> {:ok, job} end)
+    Mox.expect(Kathikon.Backend.Storage.Mock, :cancel_job, fn "id", _, _ ->
+      {:error, {:invalid_state, :discarded}}
+    end)
 
     assert {:error, {:invalid_state, :discarded}} = Kathikon.cancel("id")
   end
@@ -44,26 +48,20 @@ defmodule Kathikon.ApiTest do
   test "cancel updates cancellable jobs" do
     job = sample_job(:scheduled)
 
-    Mox.expect(Kathikon.Backend.Storage.Mock, :fetch, fn "id" -> {:ok, job} end)
-
-    Mox.expect(Kathikon.Backend.Storage.Mock, :update, fn updated ->
-      assert updated.state == :cancelled
-      assert updated.cancelled_at
-      {:ok, updated}
+    Mox.expect(Kathikon.Backend.Storage.Mock, :cancel_job, fn job_id, nil, _ ->
+      assert job_id == job.id
+      {:ok, %{job | state: :cancelled, cancelled_at: DateTime.utc_now()}}
     end)
 
-    assert {:ok, cancelled} = Kathikon.cancel("id")
+    assert {:ok, cancelled} = Kathikon.cancel(job.id)
     assert cancelled.state == :cancelled
   end
 
   test "cancel updates retryable jobs" do
     job = sample_job(:retryable)
 
-    Mox.expect(Kathikon.Backend.Storage.Mock, :fetch, fn "id" -> {:ok, job} end)
-
-    Mox.expect(Kathikon.Backend.Storage.Mock, :update, fn updated ->
-      assert updated.state == :cancelled
-      {:ok, updated}
+    Mox.expect(Kathikon.Backend.Storage.Mock, :cancel_job, fn "id", _, _ ->
+      {:ok, Map.put(job, :state, :cancelled)}
     end)
 
     assert {:ok, cancelled} = Kathikon.cancel("id")
@@ -73,11 +71,8 @@ defmodule Kathikon.ApiTest do
   test "cancel updates available jobs" do
     job = sample_job(:available)
 
-    Mox.expect(Kathikon.Backend.Storage.Mock, :fetch, fn "id" -> {:ok, job} end)
-
-    Mox.expect(Kathikon.Backend.Storage.Mock, :update, fn updated ->
-      assert updated.state == :cancelled
-      {:ok, updated}
+    Mox.expect(Kathikon.Backend.Storage.Mock, :cancel_job, fn "id", _, _ ->
+      {:ok, Map.put(job, :state, :cancelled)}
     end)
 
     assert {:ok, cancelled} = Kathikon.cancel("id")
@@ -100,7 +95,8 @@ defmodule Kathikon.SchedulerPrunerTest do
 
   import Mox
 
-  alias Kathikon.{Job, Pruner, Scheduler, Storage}
+  alias Kathikon.{Job, Pruner, Storage}
+  alias Kathikon.Scheduler.Promoter
 
   @mock Kathikon.Backend.Storage.Mock
 
@@ -110,7 +106,7 @@ defmodule Kathikon.SchedulerPrunerTest do
     Kathikon.TestSupport.stub_storage_defaults!()
 
     {:ok, scheduler} =
-      Scheduler.start_link(interval: 60_000, storage: @mock, name: false)
+      Promoter.start_link(interval: 60_000, storage: @mock, name: false)
 
     {:ok, pruner} =
       Pruner.start_link(interval: 60_000, storage: @mock, name: false)
@@ -199,16 +195,7 @@ end
 defmodule Kathikon.StubsTest do
   use ExUnit.Case, async: true
 
-  test "cron insert is not implemented" do
-    assert {:error, :not_implemented} = Kathikon.Cron.insert(MyWorker, %{})
-  end
-
   test "lifeline start is not implemented" do
     assert {:error, :not_implemented} = Kathikon.Lifeline.start_link()
   end
-end
-
-defmodule MyWorker do
-  @behaviour Kathikon.Worker
-  def perform(_), do: :ok
 end

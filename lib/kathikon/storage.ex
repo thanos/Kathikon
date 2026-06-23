@@ -1,25 +1,13 @@
 defmodule Kathikon.Storage do
   @moduledoc """
-  Storage facade for job persistence and Mnesia lifecycle.
+  Storage behaviour and facade for job persistence.
 
-  Delegates to `Kathikon.Backend.Storage` (default: `Kathikon.Backend.Storage.Mnesia`).
-  Application code should prefer `Kathikon.insert/3` over calling `Storage` directly.
+  Application code should prefer `Kathikon.insert/3` and management APIs.
+  Configure the backend via `config :kathikon, storage_backend: module`.
 
-  ## Embedding
+  Default: `Kathikon.Storage.Mnesia`.
 
-      {:ok, _} = Application.ensure_all_started(:kathikon)
-      :ok = Kathikon.Storage.setup()
-
-  ## Tests
-
-      :ok = Kathikon.Storage.clear_jobs!()
-
-  Runtime processes (`Kathikon.Dispatcher`, `Kathikon.Scheduler`, `Kathikon.Pruner`)
-  accept an optional `:storage` module at `start_link/1`. Facade tests can scope a
-  mock backend to the test process with `set_test_backend!/1` — see
-  `docs/guides/storage-and-embedding.md`.
-
-  See `docs/guides/storage-and-embedding.md`.
+  See `docs/storage.md`.
   """
 
   alias Kathikon.Job
@@ -27,11 +15,63 @@ defmodule Kathikon.Storage do
   @backend_key :storage_backend
   @storage_override {:kathikon, :storage_override}
 
-  @doc """
-  Ensures the storage backend schema and tables exist on the current node.
+  @type job :: Job.t() | map()
 
-  Call this when embedding Kathikon outside `Kathikon.Application`, or when
-  tests need an isolated storage bootstrap before the application starts.
+  @callback setup() :: :ok
+  @callback clear_jobs!() :: :ok
+  @callback reset!() :: :ok
+
+  @callback insert_job(job()) :: {:ok, String.t()} | {:ok, Job.t()} | {:error, term()}
+  @callback get_job(String.t()) :: {:ok, map()} | {:ok, Job.t()} | {:error, :not_found | term()}
+  @callback update_job(String.t(), map()) ::
+              {:ok, map()} | {:ok, Job.t()} | {:error, :not_found | term()}
+  @callback claim_job(String.t(), map()) ::
+              {:ok, map()}
+              | {:ok, Job.t()}
+              | {:error, :not_found | :already_claimed | :not_claimable | term()}
+  @callback claim_available_jobs(atom(), pos_integer(), map()) ::
+              {:ok, [map()]} | {:ok, [Job.t()]} | {:error, term()}
+  @callback complete_job(String.t(), term(), map()) ::
+              {:ok, map()} | {:ok, Job.t()} | {:error, term()}
+  @callback fail_job(String.t(), term(), map()) ::
+              {:ok, map()} | {:ok, Job.t()} | {:error, term()}
+  @callback retry_job(String.t(), keyword()) :: {:ok, map()} | {:ok, Job.t()} | {:error, term()}
+  @callback discard_job(String.t(), term(), map()) ::
+              {:ok, map()} | {:ok, Job.t()} | {:error, term()}
+  @callback cancel_job(String.t(), term(), map()) ::
+              {:ok, map()} | {:ok, Job.t()} | {:error, term()}
+  @callback list_jobs(keyword()) :: {:ok, [map()]} | {:ok, [Job.t()]} | {:error, term()}
+  @callback insert_history_event(String.t(), map()) :: :ok | {:error, term()}
+  @callback list_history(String.t()) :: {:ok, [map()]} | {:error, term()}
+  @callback move_to_dead_letter(String.t(), term(), map()) ::
+              {:ok, map()} | {:ok, Job.t()} | {:error, term()}
+  @callback list_dead_jobs(keyword()) :: {:ok, [map()]} | {:ok, [Job.t()]} | {:error, term()}
+
+  @callback insert(Job.t()) :: {:ok, Job.t()} | {:error, term()}
+  @callback update(Job.t()) :: {:ok, Job.t()} | {:error, term()}
+  @callback fetch(String.t()) :: {:ok, Job.t()} | {:error, term()}
+  @callback claim(atom(), DateTime.t()) :: {:ok, Job.t()} | :not_found | {:error, term()}
+  @callback promote_scheduled(DateTime.t()) :: non_neg_integer()
+  @callback prunable_jobs(DateTime.t()) :: [Job.t()]
+  @callback delete(String.t()) :: :ok
+  @callback all() :: [Job.t()]
+
+  @callback start_job(Job.t(), map(), DateTime.t()) :: {:ok, Job.t()} | {:error, term()}
+
+  @optional_callbacks [
+    start_job: 3,
+    insert: 1,
+    update: 1,
+    fetch: 1,
+    claim: 2,
+    promote_scheduled: 1,
+    prunable_jobs: 1,
+    delete: 1,
+    all: 0
+  ]
+
+  @doc """
+  Ensures the storage backend schema and tables exist.
   """
   @spec setup() :: :ok
   def setup, do: backend_module().setup()
@@ -85,39 +125,83 @@ defmodule Kathikon.Storage do
   end
 
   @doc false
-  @spec insert(Job.t()) :: {:ok, Job.t()} | {:error, term()}
+  def start_job(job, claimant, now \\ DateTime.utc_now()),
+    do: backend_module().start_job(job, claimant, now)
+
+  @doc false
   def insert(job), do: backend_module().insert(job)
 
   @doc false
-  @spec update(Job.t()) :: {:ok, Job.t()} | {:error, term()}
   def update(job), do: backend_module().update(job)
 
   @doc false
-  @spec fetch(String.t()) :: {:ok, Job.t()} | {:error, term()}
   def fetch(id), do: backend_module().fetch(id)
 
   @doc false
-  @spec claim(atom(), DateTime.t()) :: {:ok, Job.t()} | :not_found | {:error, term()}
   def claim(queue, now), do: backend_module().claim(queue, now)
 
   @doc false
-  @spec promote_scheduled(DateTime.t()) :: non_neg_integer()
   def promote_scheduled(now), do: backend_module().promote_scheduled(now)
 
   @doc false
-  @spec prunable_jobs(DateTime.t()) :: [Job.t()]
   def prunable_jobs(cutoff), do: backend_module().prunable_jobs(cutoff)
 
   @doc false
-  @spec delete(String.t()) :: :ok
   def delete(id), do: backend_module().delete(id)
 
   @doc false
-  @spec all() :: [Job.t()]
   def all, do: backend_module().all()
+
+  @doc false
+  def insert_job(job), do: backend_module().insert_job(job)
+
+  @doc false
+  def get_job(id), do: backend_module().get_job(id)
+
+  @doc false
+  def update_job(id, changes), do: backend_module().update_job(id, changes)
+
+  @doc false
+  def claim_job(id, claimant), do: backend_module().claim_job(id, claimant)
+
+  @doc false
+  def claim_available_jobs(queue, limit, claimant),
+    do: backend_module().claim_available_jobs(queue, limit, claimant)
+
+  @doc false
+  def complete_job(id, result, metadata), do: backend_module().complete_job(id, result, metadata)
+
+  @doc false
+  def fail_job(id, error, metadata), do: backend_module().fail_job(id, error, metadata)
+
+  @doc false
+  def retry_job(id, opts \\ []), do: backend_module().retry_job(id, opts)
+
+  @doc false
+  def discard_job(id, reason, metadata), do: backend_module().discard_job(id, reason, metadata)
+
+  @doc false
+  def cancel_job(id, reason, metadata), do: backend_module().cancel_job(id, reason, metadata)
+
+  @doc false
+  def list_jobs(opts \\ []), do: backend_module().list_jobs(opts)
+
+  @doc false
+  def insert_history_event(job_id, event),
+    do: backend_module().insert_history_event(job_id, event)
+
+  @doc false
+  def list_history(job_id), do: backend_module().list_history(job_id)
+
+  @doc false
+  def move_to_dead_letter(id, reason, metadata),
+    do: backend_module().move_to_dead_letter(id, reason, metadata)
+
+  @doc false
+  def list_dead_jobs(opts \\ []), do: backend_module().list_dead_jobs(opts)
 
   defp backend_module do
     Process.get(@storage_override) ||
-      Application.get_env(:kathikon, @backend_key, Kathikon.Backend.Storage.Mnesia)
+      Application.get_env(:kathikon, @backend_key, Kathikon.Storage.Mnesia)
   end
 end

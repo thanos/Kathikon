@@ -256,17 +256,17 @@ end
 
 ## Example scenarios
 
-| Scenario              | Worker               | Features         |
-| --------------------- | -------------------- | ---------------- |
-| Welcome email     | `SendEmailWorker`    | insert, execute  |
-| Email queue       | `SendEmailWorker`    | `queue: :emails` |
-| Weekly digest     | `SendEmailWorker`    | `schedule_in`    |
-| Flash sale        | `FlashSaleWorker`    | `priority`       |
-| Payment retry     | `FlakyPaymentWorker` | backoff          |
+| Scenario          | Worker               | Features            |
+| ----------------- | -------------------- | ------------------- |
+| Welcome email     | `SendEmailWorker`    | insert, execute     |
+| Email queue       | `SendEmailWorker`    | `queue: :emails`    |
+| Weekly digest     | `SendEmailWorker`    | `schedule_in`       |
+| Flash sale        | `FlashSaleWorker`    | `priority`          |
+| Payment retry     | `FlakyPaymentWorker` | backoff             |
 | Async poll        | `AsyncRequestWorker` | `{:sleep, seconds}` |
-| Dead letter       | `AlwaysFailWorker`   | `max_attempts`   |
-| Cancel newsletter | `SendEmailWorker`    | `cancel/1`       |
-| Thumbnails        | `ThumbnailWorker`    | concurrency      |
+| Dead letter       | `AlwaysFailWorker`   | `max_attempts`      |
+| Cancel newsletter | `SendEmailWorker`    | `cancel/1`          |
+| Thumbnails        | `ThumbnailWorker`    | concurrency         |
 
 ---
 

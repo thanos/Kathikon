@@ -2,24 +2,12 @@ defmodule Kathikon.Dispatcher do
   @moduledoc """
   Claims and executes jobs for a single queue.
 
-  One dispatcher runs per queue under `Kathikon.Queue`. It polls Mnesia on
-  `poll_interval`, atomically claims jobs, and spawns `Task`s up to the
-  configured `concurrency`.
-
-  ## `start_link/1` options
-
-    * `:queue`, `:config`, `:poll_interval` — required queue settings
-    * `:storage` — module implementing `Kathikon.Backend.Storage` callbacks
-      (default `Kathikon.Storage`)
-
-  Registered in `Kathikon.Registry` as `{:dispatcher, queue}`.
-
-  See `docs/guides/queues-and-concurrency.md`.
+  Uses atomic storage claiming and lifecycle callbacks.
   """
 
   use GenServer
 
-  alias Kathikon.{Job, Storage, Telemetry}
+  alias Kathikon.{Batch, Job, QueueControl, Storage, Telemetry}
 
   @poll_message :poll
 
@@ -36,7 +24,6 @@ defmodule Kathikon.Dispatcher do
     queue = Keyword.fetch!(opts, :queue)
     config = Keyword.fetch!(opts, :config)
     poll_interval = Keyword.get(opts, :poll_interval, Kathikon.Config.poll_interval())
-
     storage = Keyword.get(opts, :storage, Storage)
 
     state = %{
@@ -45,7 +32,8 @@ defmodule Kathikon.Dispatcher do
       concurrency: Keyword.get(config, :concurrency, 10),
       poll_interval: poll_interval,
       storage: storage,
-      running: %{}
+      running: %{},
+      dispatcher_id: self()
     }
 
     schedule_poll(poll_interval)
@@ -54,7 +42,13 @@ defmodule Kathikon.Dispatcher do
 
   @impl true
   def handle_info(@poll_message, state) do
-    state = maybe_claim_jobs(state)
+    state =
+      if QueueControl.paused?(state.queue) do
+        state
+      else
+        maybe_claim_jobs(state)
+      end
+
     schedule_poll(state.poll_interval)
     {:noreply, state}
   end
@@ -80,21 +74,41 @@ defmodule Kathikon.Dispatcher do
   end
 
   defp claim_and_run(state, slots) do
-    now = DateTime.utc_now()
+    claimant = build_claimant(state)
 
-    Enum.reduce(1..slots, state, fn _, acc ->
-      case acc.storage.claim(acc.queue, now) do
-        {:ok, job} ->
-          Telemetry.event([:dispatcher, :poll], %{count: 1}, %{queue: acc.queue, job_id: job.id})
-          run_job(acc, job)
+    case state.storage.claim_available_jobs(state.queue, slots, claimant) do
+      {:ok, jobs} ->
+        Enum.reduce(jobs, state, &start_claimed_job(&1, &2, claimant))
 
-        :not_found ->
-          acc
+      {:error, _} ->
+        state
+    end
+  end
 
-        {:error, _} ->
-          acc
-      end
-    end)
+  defp start_claimed_job(job, state, claimant) do
+    case state.storage.start_job(job, claimant, DateTime.utc_now()) do
+      {:ok, running} ->
+        emit_claim_telemetry(state.queue, running)
+        run_job(state, running)
+
+      _ ->
+        state
+    end
+  end
+
+  defp emit_claim_telemetry(queue, running) do
+    Telemetry.event([:dispatcher, :poll], %{count: 1}, %{queue: queue, job_id: running.id})
+    Telemetry.event([:job, :claimed], %{}, job_metadata(running))
+    Telemetry.event([:job, :started], %{}, job_metadata(running))
+  end
+
+  defp build_claimant(state) do
+    %{
+      node: node(),
+      pid: inspect(self()),
+      claimed_at: DateTime.utc_now(),
+      dispatcher_id: state.dispatcher_id
+    }
   end
 
   defp run_job(state, job) do
@@ -102,21 +116,15 @@ defmodule Kathikon.Dispatcher do
 
     task =
       Task.async(fn ->
-        execute_job(job, parent)
+        execute_job(job, parent, state.storage)
       end)
 
     %{state | running: Map.put(state.running, task.ref, task.pid)}
   end
 
-  defp execute_job(job, dispatcher) do
+  defp execute_job(job, dispatcher, storage) do
     start_time = System.monotonic_time()
-
-    Telemetry.event([:job, :start], %{}, %{
-      queue: job.queue,
-      job_id: job.id,
-      worker: job.worker,
-      attempt: job.attempts + 1
-    })
+    attempt = job.attempts + 1
 
     result =
       try do
@@ -130,107 +138,111 @@ defmodule Kathikon.Dispatcher do
       end
 
     duration = System.monotonic_time() - start_time
-
-    GenServer.cast(dispatcher, {:job_finished, job, result, duration})
+    GenServer.cast(dispatcher, {:job_finished, job, result, duration, attempt, storage})
   end
 
   @impl true
-  def handle_cast({:job_finished, job, result, duration}, state) do
-    now = DateTime.utc_now()
+  def handle_cast({:job_finished, job, result, duration, attempt, storage}, state) do
+    metadata = Map.merge(job_metadata(job), %{attempt: attempt, duration: duration})
+    updated = persist_job_result(storage, job, result, metadata, duration)
 
-    {updated, event_suffix, extra_metadata, attempt} =
-      case result do
-        :ok ->
-          attempt = job.attempts + 1
-
-          job = %{
-            job
-            | state: :completed,
-              attempts: attempt,
-              completed_at: now
-          }
-
-          {job, [:job, :stop], %{result: :ok}, attempt}
-
-        {:sleep, seconds} when is_integer(seconds) and seconds > 0 ->
-          at = DateTime.add(now, seconds, :second)
-
-          job = %{
-            job
-            | state: :scheduled,
-              scheduled_at: at,
-              available_at: at,
-              started_at: nil
-          }
-
-          {job, [:job, :sleep], %{result: :sleep, seconds: seconds}, job.attempts}
-
-        {:sleep, invalid} ->
-          attempt = job.attempts + 1
-
-          {updated, event_suffix, extra_metadata} =
-            handle_failure(job, attempt, {:invalid_sleep, invalid}, now)
-
-          {updated, event_suffix, extra_metadata, attempt}
-
-        {:error, reason} ->
-          attempt = job.attempts + 1
-          {job, event_suffix, extra_metadata} = handle_failure(job, attempt, reason, now)
-          {job, event_suffix, extra_metadata, attempt}
-      end
-
-    state.storage.update(updated)
-
-    metadata =
-      Map.merge(
-        %{
-          queue: job.queue,
-          job_id: job.id,
-          worker: job.worker,
-          attempt: attempt,
-          duration: duration
-        },
-        extra_metadata
-      )
-
-    Telemetry.event(event_suffix, %{duration: duration}, metadata)
+    case updated do
+      {:ok, finished} -> Batch.handle_child_finished(finished)
+      _ -> :ok
+    end
 
     {:noreply, state}
   end
 
-  defp handle_failure(job, attempt, reason, now) do
-    error = %{
-      at: DateTime.to_iso8601(now),
-      attempt: attempt,
-      reason: inspect(reason)
-    }
+  defp persist_job_result(storage, job, result, metadata, duration) do
+    case result do
+      :ok ->
+        storage.complete_job(job.id, :ok, metadata)
+        |> emit_stop(metadata, duration)
 
-    errors = job.errors ++ [error]
+      {:ok, value} ->
+        storage.complete_job(job.id, value, metadata)
+        |> emit_stop(metadata, duration)
 
-    if attempt >= job.max_attempts do
-      job = %{
-        job
-        | state: :discarded,
-          attempts: attempt,
-          completed_at: now,
-          errors: errors
-      }
+      {:sleep, seconds} when is_integer(seconds) and seconds > 0 ->
+        defer_job(storage, job, seconds, metadata, duration)
 
-      {job, [:job, :discard], %{result: :discarded, reason: reason}}
-    else
-      backoff = Job.backoff_seconds(attempt)
-      available_at = DateTime.add(now, backoff, :second)
+      {:sleep, invalid} ->
+        storage.fail_job(job.id, {:invalid_sleep, invalid}, metadata)
+        |> emit_failure(metadata, duration)
 
-      job = %{
-        job
-        | state: :retryable,
-          attempts: attempt,
-          available_at: available_at,
-          errors: errors
-      }
+      {:discard, reason} ->
+        storage.discard_job(job.id, reason, metadata)
+        |> emit_discard(metadata, duration)
 
-      {job, [:job, :retry], %{result: :retry, reason: reason, backoff: backoff}}
+      {:retry, reason} ->
+        storage.fail_job(job.id, reason, Map.put(metadata, :force_retry, true))
+        |> emit_retry(metadata, duration)
+
+      {:error, reason} ->
+        storage.fail_job(job.id, reason, metadata)
+        |> emit_failure(metadata, duration)
     end
+  end
+
+  defp defer_job(storage, job, seconds, metadata, duration) do
+    at = DateTime.add(DateTime.utc_now(), seconds, :second)
+
+    storage.update_job(job.id, %{
+      state: :scheduled,
+      scheduled_at: at,
+      available_at: at,
+      started_at: nil,
+      claimed_at: nil,
+      claimant: nil
+    })
+
+    Telemetry.event([:job, :sleep], %{duration: duration}, metadata)
+    nil
+  end
+
+  defp emit_stop({:ok, job}, metadata, duration) do
+    Telemetry.event(
+      [:job, :completed],
+      %{duration: duration},
+      Map.put(metadata, :state, job.state)
+    )
+
+    Telemetry.event([:job, :stop], %{duration: duration}, Map.put(metadata, :result, :ok))
+    {:ok, job}
+  end
+
+  defp emit_failure({:ok, job}, metadata, duration) do
+    if job.state == :dead do
+      Telemetry.event([:job, :dead], %{duration: duration}, metadata)
+    end
+
+    if job.state == :retryable do
+      Telemetry.event([:job, :retried], %{duration: duration}, metadata)
+      Telemetry.event([:job, :retry], %{duration: duration}, metadata)
+    else
+      Telemetry.event([:job, :failed], %{duration: duration}, metadata)
+    end
+
+    {:ok, job}
+  end
+
+  defp emit_retry(result, metadata, duration), do: emit_failure(result, metadata, duration)
+
+  defp emit_discard({:ok, job}, metadata, duration) do
+    Telemetry.event([:job, :discard], %{duration: duration}, metadata)
+    {:ok, job}
+  end
+
+  defp job_metadata(%Job{} = job) do
+    %{
+      queue: job.queue,
+      job_id: job.id,
+      worker: job.worker,
+      state: job.state,
+      attempt: job.attempts + 1,
+      node: node()
+    }
   end
 
   defp schedule_poll(interval) do

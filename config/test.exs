@@ -3,6 +3,7 @@ import Config
 config :kathikon,
   poll_interval: 50,
   scheduler_interval: 50,
+  cron_tick: false,
   prune_interval: 60_000,
   retention_period: 1,
   max_attempts: 3,

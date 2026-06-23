@@ -16,16 +16,36 @@ job.state         # :scheduled
 job.scheduled_at  # ~1 hour from insert time
 ```
 
+```elixir
+# config/config.exs
+config :elixir, :time_zone_database, Tzdata.TimeZoneDatabase
+
+config :kathikon, timezone: "America/New_York"
+```
+
+Kathikon stores all timestamps in UTC. The configured timezone affects:
+
+- Cron expressions and presets (`@daily` = local midnight)
+- `schedule_at` when given as `NaiveDateTime` (wall clock in that zone)
+- Scheduler `at:` option (same rules as `schedule_at`)
+
+`:schedule_in` is duration-based and unaffected by timezone.
+
 ## schedule_at — absolute time
 
-Run at a specific `DateTime` (UTC):
+Run at a specific time in the configured timezone (or pass an explicit UTC `DateTime`):
 
 ```elixir
-send_at = DateTime.utc_now() |> DateTime.add(1, :day)
-
+# Wall clock in config :kathikon, timezone (e.g. America/New_York)
 {:ok, job} =
   Kathikon.insert(MyApp.Workers.SendReminder, %{"user_id" => "42"},
-    schedule_at: send_at
+    schedule_at: ~N[2026-12-25 09:00:00]
+  )
+
+# Explicit UTC still works
+{:ok, job} =
+  Kathikon.insert(MyApp.Workers.SendReminder, %{"user_id" => "42"},
+    schedule_at: ~U[2026-12-25 14:00:00Z]
   )
 ```
 
@@ -78,9 +98,50 @@ config :kathikon, scheduler_interval: 1_000   # ms between promotion ticks
 
 Lower values reduce scheduling latency; higher values reduce Mnesia load.
 
+## Recurring cron
+
+Register jobs that run on a cron schedule. Schedules are stored in Mnesia and
+evaluated every `scheduler_interval` ms by `Kathikon.Scheduler.BuiltIn.Tick`.
+
+```elixir
+{:ok, id} =
+  Kathikon.Cron.insert(MyApp.Workers.SendReminder, %{"user_id" => "42"},
+    cron: "@daily",
+    queue: :email
+  )
+```
+
+Preset macros: `@hourly`, `@daily`, `@midnight`, `@weekly`, `@monthly`, `@yearly`, `@annually`.
+All presets use the configured `timezone` (e.g. `@daily` = local midnight).
+
+Each tick enqueues a durable Kathikon job when the expression matches.
+
+### Update at runtime
+
+Change the cron expression (or worker, args, queue) without restarting:
+
+```elixir
+{:ok, schedule} = Kathikon.Cron.update(id, cron: "0 10 * * *")
+```
+
+Updating `:cron` resets the last-fired timestamp so the new schedule can match
+on the next tick.
+
+### Cancel and inspect
+
+```elixir
+{:ok, schedule} = Kathikon.Cron.fetch(id)
+{:ok, schedules} = Kathikon.Cron.list()
+:ok = Kathikon.Cron.cancel(id)
+```
+
+Cron uses a minimal 5-field parser (`minute hour dom month dow`). For production
+recurring schedules, consider `Kathikon.Scheduler.Quantum` — see `docs/quantum_adapter.md`.
+
 ## Not yet available
 
-**Cron** (`Kathikon.Cron`) — recurring schedules — is planned for Phase 3. Until then, re-enqueue from `perform/1` or use an external scheduler to call `Kathikon.insert/3`.
+**Advanced cron** — ranges, lists, and per-schedule time zones are not supported by the built-in parser.
+Use a single application timezone via `config :kathikon, timezone: ...`.
 
 ## Related
 

@@ -1,6 +1,6 @@
 # Storage and embedding
 
-Kathikon persists jobs in **Mnesia** via `Kathikon.Storage`, backed by `Kathikon.Backend.Storage.Mnesia`.
+Kathikon persists jobs in **Mnesia** via `Kathikon.Storage` and `Kathikon.Storage.Mnesia`.
 
 ## Automatic startup
 
@@ -81,10 +81,10 @@ Application code should use `Kathikon.insert/3` rather than calling `Storage` di
 ## Backend plug-in
 
 ```elixir
-config :kathikon, storage_backend: Kathikon.Backend.Storage.Mnesia
+config :kathikon, storage_backend: Kathikon.Storage.Mnesia
 ```
 
-The behaviour is `Kathikon.Backend.Storage`. Phase 1 ships one implementation (`Kathikon.Backend.Storage.Mnesia`). Future phases add lease and cron backends under `Kathikon.Backend.*`.
+The behaviour is `Kathikon.Storage`. v0.2.0 ships one implementation (`Kathikon.Storage.Mnesia`). Future phases may add additional backends under `Kathikon.Storage.*`.
 
 ## Tables
 

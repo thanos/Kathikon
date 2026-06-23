@@ -99,8 +99,8 @@ defmodule Kathikon.IntegrationTest do
     {:ok, job} =
       Kathikon.insert(Kathikon.Workers.FailWorker, %{}, max_attempts: 2)
 
-    assert {:ok, discarded} = TestSupport.await_state(job.id, :discarded, 10_000)
-    assert discarded.attempts == 2
+    assert {:ok, dead} = TestSupport.await_state(job.id, :dead, 10_000)
+    assert dead.attempts == 2
   end
 
   test "cancel removes a pending job from execution" do
@@ -154,7 +154,7 @@ defmodule Kathikon.IntegrationTest do
       Kathikon.insert(Kathikon.Workers.SuccessWorker, %{}, schedule_in: 0)
 
     assert job.state == :scheduled
-    send(Kathikon.Scheduler, :tick)
+    send(Kathikon.Scheduler.Promoter, :tick)
 
     assert {:ok, completed} = TestSupport.await_state(job.id, :completed, 10_000)
     assert completed.state == :completed

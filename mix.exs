@@ -1,7 +1,7 @@
 defmodule Kathikon.MixProject do
   use Mix.Project
 
-  @version "0.1.0"
+  @version "0.2.0"
 
   def project do
     [
@@ -12,6 +12,7 @@ defmodule Kathikon.MixProject do
       description: "BEAM-native durable job queue and task execution platform",
       package: package(),
       docs: docs(),
+      dialyzer: dialyzer(),
       start_permanent: Mix.env() == :prod,
       elixirc_paths: elixirc_paths(Mix.env()),
       test_coverage: [tool: ExCoveralls],
@@ -23,6 +24,7 @@ defmodule Kathikon.MixProject do
         "coveralls.json": :test,
         sobelow: :dev
       ],
+      aliases: [verify: &verify/1],
       deps: deps()
     ]
   end
@@ -33,20 +35,30 @@ defmodule Kathikon.MixProject do
   def application do
     [
       mod: {Kathikon.Application, []},
-      extra_applications: [:logger, :mnesia, :telemetry]
+      extra_applications: [:logger, :mnesia, :telemetry, :tzdata]
     ]
   end
 
   defp deps do
     [
       {:telemetry, "~> 1.2"},
+      {:tzdata, "~> 1.1"},
+      {:quantum, "~> 3.5", optional: true},
       {:jason, "~> 1.4", only: [:dev, :test]},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:ex_slop, "~> 0.4", only: [:dev, :test], runtime: false},
       {:ex_doc, "~> 0.40", only: :dev, runtime: false},
       {:excoveralls, "~> 0.18", only: :test},
       {:mox, "~> 1.1", only: :test},
-      {:sobelow, "~> 0.13", only: [:dev, :test], runtime: false}
+      {:sobelow, "~> 0.13", only: [:dev, :test], runtime: false},
+      {:dialyxir, "~> 1.4", only: [:dev], runtime: false}
+    ]
+  end
+
+  defp dialyzer do
+    [
+      plt_add_apps: [:mnesia],
+      flags: [:unmatched_returns, :error_handling, :underspecs]
     ]
   end
 
@@ -66,17 +78,23 @@ defmodule Kathikon.MixProject do
       source_ref: "v#{@version}",
       source_url: "https://github.com/thanos/kathikon/blob/main",
       extras: extras(),
+      exclude_modules: [
+        Kathikon.Backend.Storage,
+        Kathikon.Backend.Storage.Mnesia
+      ],
       groups_for_modules: [
         API: ~r/^Kathikon$/,
-        Core: ~r/^Kathikon\.(Job|Worker|Config|Storage|Telemetry)$/,
-        Runtime: ~r/^Kathikon\.(Application|Queue|Dispatcher|Scheduler|Pruner)$/,
-        Backend: ~r/^Kathikon\.Backend\./
+        Core: ~r/^Kathikon\.(Job|Worker|Config|Storage|Telemetry|Report|Batch)$/,
+        Runtime: ~r/^Kathikon\.(Application|Queue|Dispatcher|Scheduler|Pruner)/,
+        Storage: ~r/^Kathikon\.Storage/
       ],
       groups_for_extras: [
         Introduction: ~r/(^README|docs\/documentation)/i,
         Guides: ~r/docs\/guides\//,
+        "v0.2.0":
+          ~r/docs\/(storage|job_lifecycle|scheduling|quantum|batches|management|reporting|architecture|articles)/,
         Reference: ~r/docs\/reference\//,
-        Design: ~r/(docs\/phase-1-|plans\/)/,
+        Design: ~r/(docs\/phase-1-|docs\/v0_2_0|plans\/)/,
         Livebook: ~r/livebooks\//
       ]
     ]
@@ -84,6 +102,16 @@ defmodule Kathikon.MixProject do
 
   defp extras do
     [
+      "docs/storage.md",
+      "docs/job_lifecycle.md",
+      "docs/scheduling.md",
+      "docs/quantum_adapter.md",
+      "docs/batches.md",
+      "docs/management_api.md",
+      "docs/reporting.md",
+      "docs/architecture.md",
+      "docs/articles/kathikon_v0_2_0_control_scheduling_batches.md",
+      "docs/v0_2_0_architecture_review.md",
       "docs/guides/quick-start.md",
       "docs/guides/workers.md",
       "docs/guides/queues-and-concurrency.md",
@@ -95,9 +123,45 @@ defmodule Kathikon.MixProject do
       "docs/guides/storage-and-embedding.md",
       "docs/reference/modules.md",
       "README.md",
-      "LICENSE": [title: "License"],
+      LICENSE: [title: "License"],
       "docs/documentation.md": [title: "Documentation"],
       "livebooks/kathikon_demo.livemd": [title: "Interactive demo"]
     ]
+  end
+
+  defp verify(_) do
+    steps = [
+      # ["precommit", :dev],
+      {"compile --warnings-as-errors", :dev},
+      {"format --check-formatted", :dev},
+      {"credo --strict", :dev},
+      # {"sobelow --config", :dev},
+      {"dialyzer", :dev},
+      {"test --cover", :test},
+      {"docs --warnings-as-errors", :dev}
+    ]
+
+    Enum.each(steps, fn {task, env} ->
+      Mix.shell().info(IO.ANSI.format([:bright, "==> mix #{task}", :reset]))
+
+      mix_executable =
+        System.find_executable("mix") ||
+          Mix.raise("Could not find `mix` executable on PATH")
+
+      {_, exit_code} =
+        System.cmd(mix_executable, String.split(task),
+          env: [{"MIX_ENV", to_string(env)}],
+          into: IO.stream(:stdio, :line),
+          stderr_to_stdout: true
+        )
+
+      if exit_code != 0 do
+        Mix.raise("mix #{task} failed (exit code #{exit_code})")
+      end
+    end)
+
+    Mix.shell().info(
+      IO.ANSI.format([:green, :bright, "\nAll verification checks passed!", :reset])
+    )
   end
 end

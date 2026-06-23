@@ -216,7 +216,7 @@ Kathikon.Config.concurrency(:emails)  # 5
 
 ## Kathikon.Storage
 
-Facade over `Kathikon.Backend.Storage`. Used internally; embedders may call `setup/0`.
+Facade over the configured storage backend. Used internally; embedders may call `setup/0`.
 
 | Function | Description |
 |----------|-------------|
@@ -292,16 +292,22 @@ Registered as `Kathikon.Pruner` when started by the application.
 
 `start_link/1` options: `:interval`, `:storage`, `:name` (`false` for unnamed test instances).
 
+### Kathikon.Cron
+
+Recurring cron schedules. Each match enqueues a durable job.
+
+```elixir
+Kathikon.Cron.insert(worker, args, cron: "0 9 * * *", queue: :email)
+Kathikon.Cron.update(schedule_id, cron: "0 10 * * *")
+Kathikon.Cron.fetch(schedule_id)
+Kathikon.Cron.list()
+Kathikon.Cron.cancel(schedule_id)
+Kathikon.Cron.valid?(expression)
+```
+
 ---
 
 ## Placeholders (not implemented)
-
-### Kathikon.Cron
-
-```elixir
-Kathikon.Cron.insert(worker, args, opts)
-# {:error, :not_implemented}  — Phase 3
-```
 
 ### Kathikon.Lifeline
 
@@ -316,7 +322,7 @@ Kathikon.Lifeline.start_link()
 
 | Module | Role |
 |--------|------|
-| `Kathikon.Backend.Storage` | Storage behaviour |
-| `Kathikon.Backend.Storage.Mnesia` | Mnesia implementation |
+| `Kathikon.Storage` | Storage behaviour and facade |
+| `Kathikon.Storage.Mnesia` | Default Mnesia implementation |
 
-Configure via `storage_backend: Kathikon.Backend.Storage.Mnesia`.
+Configure via `storage_backend: Kathikon.Storage.Mnesia`.

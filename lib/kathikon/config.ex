@@ -30,6 +30,7 @@ defmodule Kathikon.Config do
   @default_prune_interval 60_000
   @default_retention_period :timer.hours(24 * 7)
   @default_max_attempts 20
+  @default_timezone "Etc/UTC"
 
   def queues, do: get(:queues, @default_queues)
 
@@ -54,6 +55,17 @@ defmodule Kathikon.Config do
   def retention_period, do: get(:retention_period, @default_retention_period)
 
   def max_attempts, do: get(:max_attempts, @default_max_attempts)
+
+  @doc """
+  IANA timezone for cron matching and naive `schedule_at` values.
+
+  Defaults to `"Etc/UTC"`. Requires `config :elixir, :time_zone_database, Tzdata.TimeZoneDatabase`.
+  """
+  def timezone, do: get(:timezone, @default_timezone)
+
+  def scheduler_module, do: get(:scheduler, Kathikon.Scheduler.BuiltIn)
+
+  def result_storage, do: get(:result, :store)
 
   @doc """
   Mnesia table copy type: `:ram` or `:disc`.

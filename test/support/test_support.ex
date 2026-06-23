@@ -7,13 +7,6 @@ defmodule Kathikon.TestSupport do
   @mock Kathikon.Backend.Storage.Mock
   @order_name Kathikon.TestOrder
 
-  @doc """
-  Scopes the mock storage backend to the current test process.
-
-  Use for facade tests (`Kathikon.cancel/1`, `Kathikon.fetch/1`, and similar)
-  that call `Kathikon.Storage` from the test process. Runtime processes under
-  test should receive `storage: #{inspect(@mock)}` at `start_link/1` instead.
-  """
   def use_mock_storage!(context) do
     stub_storage_defaults!()
     Kathikon.Storage.set_test_backend!(@mock)
@@ -52,19 +45,40 @@ defmodule Kathikon.TestSupport do
 
   def stub_storage_defaults! do
     Mox.stub(@mock, :claim, fn _, _ -> :not_found end)
+    Mox.stub(@mock, :claim_available_jobs, fn _, _, _ -> {:ok, []} end)
+    Mox.stub(@mock, :claim_job, fn _, _ -> {:error, :not_claimable} end)
 
-    Mox.stub(@mock, :update, fn job ->
-      {:ok, job}
+    Mox.stub(@mock, :start_job, fn job, _claimant, _now ->
+      {:ok, Map.put(job, :state, :running)}
     end)
 
-    Mox.stub(@mock, :insert, fn job ->
-      {:ok, job}
+    Mox.stub(@mock, :update, fn job -> {:ok, job} end)
+
+    Mox.stub(@mock, :update_job, fn id, changes ->
+      {:ok, stub_job(id, changes)}
     end)
 
-    Mox.stub(@mock, :fetch, fn _ ->
-      {:error, :not_found}
+    Mox.stub(@mock, :insert, fn job -> {:ok, job} end)
+    Mox.stub(@mock, :insert_job, fn job -> {:ok, job.id} end)
+    Mox.stub(@mock, :fetch, fn _ -> {:error, :not_found} end)
+    Mox.stub(@mock, :get_job, fn _ -> {:error, :not_found} end)
+
+    Mox.stub(@mock, :complete_job, fn id, _result, _meta ->
+      {:ok, stub_job(id, state: :completed)}
     end)
 
+    Mox.stub(@mock, :fail_job, fn id, _error, _meta ->
+      {:ok, stub_job(id, state: :retryable)}
+    end)
+
+    Mox.stub(@mock, :discard_job, fn id, _, _ -> {:ok, stub_job(id, state: :discarded)} end)
+    Mox.stub(@mock, :cancel_job, fn id, _, _ -> {:ok, stub_job(id, state: :cancelled)} end)
+    Mox.stub(@mock, :retry_job, fn id, _ -> {:ok, stub_job(id, state: :available)} end)
+    Mox.stub(@mock, :move_to_dead_letter, fn id, _, _ -> {:ok, stub_job(id, state: :dead)} end)
+    Mox.stub(@mock, :list_jobs, fn _ -> {:ok, []} end)
+    Mox.stub(@mock, :list_dead_jobs, fn _ -> {:ok, []} end)
+    Mox.stub(@mock, :insert_history_event, fn _, _ -> :ok end)
+    Mox.stub(@mock, :list_history, fn _ -> {:ok, []} end)
     Mox.stub(@mock, :promote_scheduled, fn _ -> 0 end)
     Mox.stub(@mock, :prunable_jobs, fn _ -> [] end)
     Mox.stub(@mock, :delete, fn _ -> :ok end)
@@ -72,6 +86,18 @@ defmodule Kathikon.TestSupport do
     Mox.stub(@mock, :setup, fn -> :ok end)
     Mox.stub(@mock, :clear_jobs!, fn -> :ok end)
     Mox.stub(@mock, :reset!, fn -> :ok end)
+  end
+
+  defp stub_job(id, attrs) do
+    base = %Kathikon.Job{
+      id: id,
+      queue: :default,
+      worker: MyStubWorker,
+      args: %{},
+      state: :available
+    }
+
+    Map.merge(base, Map.new(attrs))
   end
 
   def reset! do
@@ -84,7 +110,6 @@ defmodule Kathikon.TestSupport do
 
   def await_job(job_id, predicate \\ fn job -> job.state == :completed end, timeout \\ 5_000) do
     deadline = System.monotonic_time(:millisecond) + timeout
-
     do_await(job_id, predicate, deadline)
   end
 
@@ -137,4 +162,9 @@ defmodule Kathikon.TestSupport do
         error
     end
   end
+end
+
+defmodule MyStubWorker do
+  use Kathikon.Worker
+  def perform(_), do: :ok
 end

@@ -8,7 +8,7 @@ defmodule Kathikon.Pruner do
   ## `start_link/1` options
 
     * `:interval` — tick period in ms (default from `Kathikon.Config`)
-    * `:storage` — module implementing `Kathikon.Backend.Storage` callbacks
+    * `:storage` — module implementing `Kathikon.Storage` callbacks
     * `:name` — registered name (default `Kathikon.Pruner`; use `false` in tests)
 
   Mnesia is coordination storage, not long-term history — export metrics

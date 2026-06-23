@@ -91,3 +91,35 @@ defmodule Kathikon.Workers.ExitWorker do
   @impl true
   def perform(_job), do: exit(:shutdown)
 end
+
+defmodule Kathikon.Workers.ResultWorker do
+  @moduledoc false
+  use Kathikon.Worker
+
+  @impl true
+  def perform(_job), do: {:ok, %{value: 42}}
+end
+
+defmodule Kathikon.Workers.DiscardWorker do
+  @moduledoc false
+  use Kathikon.Worker
+
+  @impl true
+  def perform(_job), do: {:discard, :not_wanted}
+end
+
+defmodule Kathikon.Workers.ForceRetryWorker do
+  @moduledoc false
+  use Kathikon.Worker
+
+  @impl true
+  def perform(_job), do: {:retry, :try_again}
+end
+
+defmodule Kathikon.Workers.MyWorker do
+  @moduledoc false
+  use Kathikon.Worker
+
+  @impl true
+  def perform(_job), do: :ok
+end

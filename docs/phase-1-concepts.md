@@ -1,5 +1,7 @@
 # Phase 1: Concepts
 
+> **Historical:** This document describes Kathikon v0.1.0. For v0.2.0 see the [documentation index](documentation.md) and [job lifecycle](job_lifecycle.md).
+
 This document explains the distributed systems, OTP, and Mnesia concepts behind Kathikon Phase 1.
 
 ## Distributed systems concepts

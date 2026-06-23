@@ -60,6 +60,11 @@ defmodule Kathikon.Config do
   IANA timezone for cron matching and naive `schedule_at` values.
 
   Defaults to `"Etc/UTC"`. Requires `config :elixir, :time_zone_database, Tzdata.TimeZoneDatabase`.
+
+  ## Examples
+
+      Kathikon.Config.timezone()
+      #=> "Etc/UTC"
   """
   def timezone, do: get(:timezone, @default_timezone)
 
@@ -72,6 +77,14 @@ defmodule Kathikon.Config do
 
   Defaults to `:auto` — `ram` on `nonode@nohost` and Livebook nodes,
   `disc` on other named nodes.
+
+  ## Examples
+
+      Kathikon.Config.mnesia_copies()
+      #=> :ram   # on nonode@nohost
+
+      Kathikon.Config.concurrency(:emails)
+      #=> 5
   """
   def mnesia_copies do
     case get(:mnesia_copies, :auto) do

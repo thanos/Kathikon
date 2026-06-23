@@ -1,7 +1,6 @@
 defmodule Kathikon.CoverageTest do
   use ExUnit.Case, async: false
 
-  alias Kathikon.Backend.Storage, as: LegacyStorage
   alias Kathikon.{Batch, Job, Report, Storage}
   alias Kathikon.Scheduler.BuiltIn
   alias Kathikon.Scheduler.Quantum
@@ -576,101 +575,6 @@ defmodule Kathikon.CoverageTest do
         assert {:error, :quantum_not_available} =
                  Quantum.schedule_once(Kathikon.Workers.SuccessWorker, %{}, in: 10)
       end
-    end
-  end
-
-  describe "Legacy backend storage delegates" do
-    test "Backend.Storage delegates lifecycle functions" do
-      job =
-        Job.build(Kathikon.Workers.SuccessWorker, %{}, queue: :default)
-        |> Map.put(:state, :available)
-        |> Map.put(:available_at, DateTime.utc_now())
-
-      assert :ok = LegacyStorage.setup()
-      assert :ok = LegacyStorage.clear_jobs!()
-
-      assert {:ok, inserted} = LegacyStorage.insert(job)
-      assert {:ok, fetched} = LegacyStorage.fetch(inserted.id)
-      assert fetched.id == inserted.id
-
-      claimant = %{
-        node: node(),
-        pid: inspect(self()),
-        claimed_at: DateTime.utc_now(),
-        dispatcher_id: self()
-      }
-
-      assert {:ok, claimed} = LegacyStorage.claim_job(inserted.id, claimant)
-      assert {:ok, running} = LegacyStorage.start_job(claimed, claimant)
-      assert {:ok, completed} = LegacyStorage.complete_job(running.id, :ok, %{attempt: 1})
-      assert completed.state == :completed
-
-      assert {:ok, history} = LegacyStorage.list_history(inserted.id)
-      assert history != []
-
-      assert {:ok, _} = LegacyStorage.update_job(inserted.id, %{args: %{"legacy" => true}})
-      assert {:ok, _} = LegacyStorage.get_job(inserted.id)
-      assert {:ok, _} = LegacyStorage.insert_job(job |> Map.put(:id, "legacy-map"))
-      assert {:ok, _} = LegacyStorage.list_jobs([])
-      assert {:ok, _} = LegacyStorage.list_dead_jobs([])
-      assert :ok = LegacyStorage.insert_history_event(inserted.id, hd(history))
-      assert :not_found = LegacyStorage.claim(:missing_queue, DateTime.utc_now())
-      assert LegacyStorage.promote_scheduled(DateTime.utc_now()) >= 0
-      assert is_list(LegacyStorage.prunable_jobs(DateTime.utc_now()))
-      assert :ok = LegacyStorage.delete(inserted.id)
-      assert is_list(LegacyStorage.all())
-
-      retryable =
-        Job.build(Kathikon.Workers.FailWorker, %{}, queue: :default)
-        |> Map.put(:state, :retryable)
-
-      {:ok, retryable} = LegacyStorage.insert(retryable)
-      assert {:ok, _} = LegacyStorage.retry_job(retryable.id, [])
-      assert {:ok, _} = LegacyStorage.claim_available_jobs(:default, 1, claimant)
-
-      discardable =
-        Job.build(Kathikon.Workers.FailWorker, %{}, queue: :default)
-        |> Map.put(:state, :failed)
-
-      {:ok, discardable} = LegacyStorage.insert(discardable)
-      assert {:ok, _} = LegacyStorage.discard_job(discardable.id, :legacy, %{})
-
-      cancellable =
-        Job.build(Kathikon.Workers.FailWorker, %{}, queue: :default)
-        |> Map.put(:state, :scheduled)
-
-      {:ok, cancellable} = LegacyStorage.insert(cancellable)
-      assert {:ok, _} = LegacyStorage.cancel_job(cancellable.id, :legacy, %{})
-
-      dead_source =
-        Job.build(Kathikon.Workers.FailWorker, %{}, queue: :default)
-        |> Map.put(:state, :running)
-
-      {:ok, dead_source} = LegacyStorage.insert(dead_source)
-      assert {:ok, _} = LegacyStorage.move_to_dead_letter(dead_source.id, :legacy, %{})
-
-      assert :ok = LegacyStorage.reset!()
-    end
-
-    test "Backend.Storage.Mnesia delegates" do
-      alias Kathikon.Backend.Storage.Mnesia, as: LegacyMnesia
-
-      job =
-        Job.build(Kathikon.Workers.SuccessWorker, %{}, queue: :default)
-        |> Map.put(:state, :available)
-        |> Map.put(:available_at, DateTime.utc_now())
-
-      assert :ok = LegacyMnesia.setup()
-      assert :ok = LegacyMnesia.clear_jobs!()
-      assert {:ok, inserted} = LegacyMnesia.insert(job)
-      assert {:ok, _} = LegacyMnesia.fetch(inserted.id)
-      assert {:ok, _} = LegacyMnesia.update(inserted)
-      assert :not_found = LegacyMnesia.claim(:empty, DateTime.utc_now())
-      assert LegacyMnesia.promote_scheduled(DateTime.utc_now()) >= 0
-      assert is_list(LegacyMnesia.prunable_jobs(DateTime.utc_now()))
-      assert :ok = LegacyMnesia.delete(inserted.id)
-      assert is_list(LegacyMnesia.all())
-      assert :ok = LegacyMnesia.reset!()
     end
   end
 

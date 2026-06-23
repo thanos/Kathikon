@@ -22,7 +22,7 @@ v0.1.0 used:
 - `Kathikon.Storage` — behaviour and facade delegating to a configurable backend module
 - `Kathikon.Storage.Mnesia` — Mnesia tables storing `:erlang.term_to_binary/1` payloads
 
-v0.2.0 expands the `Kathikon.Storage` behaviour with atomic lifecycle operations, a `:kathikon_history` table, batch records, and dead-letter support. `Kathikon.Backend.Storage` modules remain as deprecated compatibility aliases.
+v0.2.0 expands the `Kathikon.Storage` behaviour with atomic lifecycle operations, a `:kathikon_history` table, batch records, and dead-letter support. Use `Kathikon.Storage.Mnesia` as the default backend.
 
 ## Current Job Lifecycle
 

@@ -78,10 +78,6 @@ defmodule Kathikon.MixProject do
       source_ref: "v#{@version}",
       source_url: "https://github.com/thanos/kathikon/blob/main",
       extras: extras(),
-      exclude_modules: [
-        Kathikon.Backend.Storage,
-        Kathikon.Backend.Storage.Mnesia
-      ],
       groups_for_modules: [
         API: ~r/^Kathikon$/,
         Core: ~r/^Kathikon\.(Job|Worker|Config|Storage|Telemetry|Report|Batch)$/,

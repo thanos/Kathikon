@@ -3,6 +3,14 @@ defmodule Kathikon.Telemetry do
   Telemetry events emitted by Kathikon.
 
   All events are prefixed with `[:kathikon, ...]`.
+
+  ## Examples
+
+      :ok = Kathikon.Telemetry.attach_default_logger()
+
+      :telemetry.attach("my-handler", [[:kathikon, :job, :completed]], fn event, measurements, metadata, _ ->
+        IO.inspect({event, metadata.job_id})
+      end)
   """
 
   require Logger
@@ -16,6 +24,10 @@ defmodule Kathikon.Telemetry do
 
   @doc """
   Attaches a default logger handler for Kathikon telemetry events.
+
+  ## Examples
+
+      :ok = Kathikon.Telemetry.attach_default_logger()
   """
   @spec attach_default_logger() :: :ok | {:error, :already_exists}
   def attach_default_logger do

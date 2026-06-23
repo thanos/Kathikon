@@ -1,5 +1,10 @@
 # Kathikon
 
+[![CI](https://github.com/thanos/kathikon/actions/workflows/ci.yml/badge.svg)](https://github.com/thanos/kathikon/actions/workflows/ci.yml)
+[![Coverage Status](https://coveralls.io/repos/github/thanos/kathikon/badge.svg?branch=main)](https://coveralls.io/github/thanos/kathikon?branch=main)
+[![Hex version](https://img.shields.io/hexpm/v/kathikon.svg)](https://hex.pm/packages/kathikon)
+[![Hex Docs](https://img.shields.io/badge/hex-docs-8A33A3.svg)](https://hexdocs.pm/kathikon)
+
 **Kathikon** (Greek: καθήκον — duty, obligation) is a BEAM-native durable job queue and task execution platform for Elixir.
 
 Jobs are treated as durable obligations that must eventually be fulfilled: completed, retried, cancelled, or discarded — but never silently lost.

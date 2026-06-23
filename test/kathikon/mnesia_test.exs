@@ -44,10 +44,11 @@ defmodule Kathikon.ConfigTest do
   end
 end
 
-defmodule Kathikon.Backend.Storage.Mnesia.LifecycleTest do
+defmodule Kathikon.Storage.Mnesia.SetupTest do
   use ExUnit.Case, async: false
 
-  alias Kathikon.{Backend.Storage.Mnesia, Job, Storage}
+  alias Kathikon.{Job, Storage}
+  alias Kathikon.Storage.Mnesia
 
   setup do
     :ok = Storage.setup()

@@ -5,12 +5,25 @@ defmodule Kathikon.Report do
   Initial implementation scans in-memory Mnesia tables — suitable for
   development and moderate job volumes. See performance notes in
   `docs/reporting.md`.
+
+  ## Examples
+
+      {:ok, queues} = Kathikon.Report.queue_summary()
+      {:ok, counts} = Kathikon.Report.job_counts()
+      {:ok, %{count: n}} = Kathikon.Report.dead_letter_summary()
   """
 
   alias Kathikon.{Config, Job, Storage}
 
   @doc """
   Summarizes each queue with job counts by state.
+
+  ## Examples
+
+      {:ok, summaries} = Kathikon.Report.queue_summary()
+
+      hd(summaries)
+      #=> %{queue: :default, paused: false, counts: %{available: 2, completed: 10}}
   """
   @spec queue_summary(keyword()) :: {:ok, [map()]} | {:error, term()}
   def queue_summary(_opts \\ []) do
@@ -33,6 +46,11 @@ defmodule Kathikon.Report do
 
   @doc """
   Returns global job counts grouped by state.
+
+  ## Examples
+
+      {:ok, counts} = Kathikon.Report.job_counts()
+      counts[:completed]
   """
   @spec job_counts(keyword()) :: {:ok, map()} | {:error, term()}
   def job_counts(_opts \\ []) do
@@ -43,6 +61,13 @@ defmodule Kathikon.Report do
 
   @doc """
   Summarizes failures by worker module.
+
+  ## Examples
+
+      {:ok, summary} = Kathikon.Report.failure_summary()
+
+      hd(summary)
+      #=> %{worker: MyApp.FailWorker, count: 3, last_error: "..."}
   """
   @spec failure_summary(keyword()) :: {:ok, [map()]} | {:error, term()}
   def failure_summary(_opts \\ []) do
@@ -66,6 +91,14 @@ defmodule Kathikon.Report do
 
   @doc """
   Summarizes dead-letter queue jobs.
+
+  ## Options
+
+    * `:queue` — filter by queue
+
+  ## Examples
+
+      {:ok, %{count: count, jobs: jobs}} = Kathikon.Report.dead_letter_summary()
   """
   @spec dead_letter_summary(keyword()) :: {:ok, map()} | {:error, term()}
   def dead_letter_summary(opts \\ []) do
@@ -76,6 +109,11 @@ defmodule Kathikon.Report do
 
   @doc """
   Returns completed job counts per queue (throughput proxy).
+
+  ## Examples
+
+      {:ok, throughput} = Kathikon.Report.throughput()
+      #=> [%{queue: :default, completed: 42}]
   """
   @spec throughput(keyword()) :: {:ok, [map()]} | {:error, term()}
   def throughput(_opts \\ []) do
@@ -92,6 +130,10 @@ defmodule Kathikon.Report do
 
   @doc """
   Returns average runtime for completed jobs (microseconds).
+
+  ## Examples
+
+      {:ok, %{samples: n, average_microseconds: avg}} = Kathikon.Report.latency()
   """
   @spec latency(keyword()) :: {:ok, map()} | {:error, term()}
   def latency(_opts \\ []) do

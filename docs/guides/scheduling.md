@@ -53,7 +53,7 @@ If `schedule_at` is **in the past**, the job is inserted as `:available` immedia
 
 ## How promotion works
 
-`Kathikon.Scheduler` ticks every `scheduler_interval` ms (default `1000`). On each tick it runs `Storage.promote_scheduled/1`, which in a **single Mnesia transaction**:
+`Kathikon.Scheduler.Promoter` ticks every `scheduler_interval` ms (default `1000`). On each tick it runs `Storage.promote_scheduled/1`, which in a **single Mnesia transaction**:
 
 1. Finds all `:scheduled` jobs where `scheduled_at <= now`
 2. Sets `state: :available` and `available_at: now`
@@ -145,5 +145,5 @@ Use a single application timezone via `config :kathikon, timezone: ...`.
 
 ## Related
 
-- [Module reference: Kathikon.Scheduler](../reference/modules.md#kathikonscheduler)
+- [Module reference: Kathikon.Scheduler.Promoter](../reference/modules.md#kathikonschedulerpromoter)
 - [Cancellation](cancellation.md)

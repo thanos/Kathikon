@@ -20,7 +20,7 @@ defmodule Kathikon.ApiTest do
   test "cancel rejects completed jobs" do
     _job = sample_job(:completed)
 
-    Mox.expect(Kathikon.Backend.Storage.Mock, :cancel_job, fn "id", _, _ ->
+    Mox.expect(Kathikon.Storage.Mock, :cancel_job, fn "id", _, _ ->
       {:error, {:invalid_state, :completed}}
     end)
 
@@ -30,7 +30,7 @@ defmodule Kathikon.ApiTest do
   test "cancel rejects running jobs" do
     _job = sample_job(:running)
 
-    Mox.expect(Kathikon.Backend.Storage.Mock, :cancel_job, fn "id", _, _ ->
+    Mox.expect(Kathikon.Storage.Mock, :cancel_job, fn "id", _, _ ->
       {:error, :running}
     end)
 
@@ -38,7 +38,7 @@ defmodule Kathikon.ApiTest do
   end
 
   test "cancel rejects discarded jobs" do
-    Mox.expect(Kathikon.Backend.Storage.Mock, :cancel_job, fn "id", _, _ ->
+    Mox.expect(Kathikon.Storage.Mock, :cancel_job, fn "id", _, _ ->
       {:error, {:invalid_state, :discarded}}
     end)
 
@@ -48,7 +48,7 @@ defmodule Kathikon.ApiTest do
   test "cancel updates cancellable jobs" do
     job = sample_job(:scheduled)
 
-    Mox.expect(Kathikon.Backend.Storage.Mock, :cancel_job, fn job_id, nil, _ ->
+    Mox.expect(Kathikon.Storage.Mock, :cancel_job, fn job_id, nil, _ ->
       assert job_id == job.id
       {:ok, %{job | state: :cancelled, cancelled_at: DateTime.utc_now()}}
     end)
@@ -60,7 +60,7 @@ defmodule Kathikon.ApiTest do
   test "cancel updates retryable jobs" do
     job = sample_job(:retryable)
 
-    Mox.expect(Kathikon.Backend.Storage.Mock, :cancel_job, fn "id", _, _ ->
+    Mox.expect(Kathikon.Storage.Mock, :cancel_job, fn "id", _, _ ->
       {:ok, Map.put(job, :state, :cancelled)}
     end)
 
@@ -71,7 +71,7 @@ defmodule Kathikon.ApiTest do
   test "cancel updates available jobs" do
     job = sample_job(:available)
 
-    Mox.expect(Kathikon.Backend.Storage.Mock, :cancel_job, fn "id", _, _ ->
+    Mox.expect(Kathikon.Storage.Mock, :cancel_job, fn "id", _, _ ->
       {:ok, Map.put(job, :state, :cancelled)}
     end)
 
@@ -82,8 +82,8 @@ defmodule Kathikon.ApiTest do
   test "fetch and all delegate to storage" do
     job = sample_job()
 
-    Mox.expect(Kathikon.Backend.Storage.Mock, :fetch, fn "id" -> {:ok, job} end)
-    Mox.expect(Kathikon.Backend.Storage.Mock, :all, fn -> [job] end)
+    Mox.expect(Kathikon.Storage.Mock, :fetch, fn "id" -> {:ok, job} end)
+    Mox.expect(Kathikon.Storage.Mock, :all, fn -> [job] end)
 
     assert {:ok, ^job} = Kathikon.fetch("id")
     assert Kathikon.all() == [job]
@@ -98,7 +98,7 @@ defmodule Kathikon.SchedulerPrunerTest do
   alias Kathikon.{Job, Pruner, Storage}
   alias Kathikon.Scheduler.Promoter
 
-  @mock Kathikon.Backend.Storage.Mock
+  @mock Kathikon.Storage.Mock
 
   setup :verify_on_exit!
 

@@ -102,7 +102,19 @@ defmodule Kathikon.Job do
   @doc """
   Builds a new job from worker module, args, and options.
 
-  Prefer `Kathikon.insert/3` for enqueueing.
+  Prefer `Kathikon.insert/3` for enqueueing — it persists the job and starts
+  the queue dispatcher.
+
+  ## Examples
+
+      job = Kathikon.Job.build(MyApp.EmailWorker, %{"to" => "a@b.com"},
+        queue: :emails,
+        priority: 2,
+        schedule_in: 60
+      )
+
+      job.state
+      #=> :scheduled
   """
   @spec build(module(), map(), keyword()) :: t()
   def build(worker, args, opts) do
@@ -137,6 +149,16 @@ defmodule Kathikon.Job do
 
   @doc """
   Returns true when the job can be claimed for execution at `now`.
+
+  ## Examples
+
+      job = Kathikon.Job.build(MyWorker, %{})
+      Kathikon.Job.claimable?(job, DateTime.utc_now())
+      #=> true
+
+      scheduled = Kathikon.Job.build(MyWorker, %{}, schedule_in: 3600)
+      Kathikon.Job.claimable?(scheduled, DateTime.utc_now())
+      #=> false
   """
   @spec claimable?(t(), DateTime.t()) :: boolean()
   def claimable?(%__MODULE__{state: state, available_at: available_at}, now) do
@@ -154,6 +176,14 @@ defmodule Kathikon.Job do
 
   @doc """
   Computes exponential backoff in seconds for the given attempt number.
+
+  ## Examples
+
+      Kathikon.Job.backoff_seconds(1)
+      #=> 5
+
+      Kathikon.Job.backoff_seconds(3)
+      #=> 45
   """
   @spec backoff_seconds(non_neg_integer()) :: non_neg_integer()
   def backoff_seconds(attempt) when attempt <= 0, do: 1
@@ -182,6 +212,11 @@ defmodule Kathikon.Job do
 
   @doc """
   Converts a job struct to a map for storage callbacks and reporting.
+
+  ## Examples
+
+      Kathikon.Job.to_map(job)
+      #=> %{id: "...", state: :completed, worker: MyWorker, ...}
   """
   @spec to_map(t()) :: %{atom() => term()}
   def to_map(%__MODULE__{} = job) do
@@ -193,6 +228,12 @@ defmodule Kathikon.Job do
 
   @doc """
   Returns job history events from storage.
+
+  Prefer `Kathikon.history/1` in application code.
+
+  ## Examples
+
+      {:ok, events} = Kathikon.Job.history(job_id)
   """
   @spec history(String.t()) :: {:ok, [map()]} | {:error, term()}
   def history(job_id) when is_binary(job_id) do

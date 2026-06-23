@@ -2,6 +2,20 @@ defmodule Kathikon.Worker do
   @moduledoc """
   Behaviour for Kathikon job workers.
 
+  ## Example
+
+      defmodule MyApp.EmailWorker do
+        use Kathikon.Worker
+
+        @impl true
+        def perform(%Kathikon.Job{args: %{"to" => email}}) do
+          MyApp.Mailer.deliver(email)
+          :ok
+        end
+      end
+
+      {:ok, _job} = Kathikon.insert(MyApp.EmailWorker, %{"to" => "user@example.com"})
+
   ## Return values
 
     * `:ok` — success; result stored per `result: :store | :discard`

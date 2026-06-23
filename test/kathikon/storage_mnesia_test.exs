@@ -1,4 +1,4 @@
-defmodule Kathikon.Backend.Storage.MnesiaTest do
+defmodule Kathikon.Storage.Mnesia.FacadeTest do
   use ExUnit.Case, async: false
 
   alias Kathikon.{Job, Storage}

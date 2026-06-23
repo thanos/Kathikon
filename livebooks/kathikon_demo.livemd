@@ -4,7 +4,7 @@
 
 ## Intro
 
-**Kathikon** is a BEAM-native durable job queue. Jobs live in Mnesia and run through explicit states: `scheduled → available → executing → completed | retryable | discarded | cancelled`.
+**Kathikon** is a BEAM-native durable job queue. Jobs live in Mnesia and run through explicit states: `scheduled → available → claimed → running → completed | retryable | dead | cancelled`.
 
 Run the setup cells top-to-bottom, then try each demo section.
 
@@ -386,13 +386,15 @@ Process.sleep(400)
 {done.attempts, done.errors, Demo.Log.entries()}
 ```
 
-## 7. Discard
+## 7. Dead letter
+
+Exhausted retries move the job to `:dead` (not `:discarded` — that state is for explicit `{:discard, reason}` returns).
 
 ```elixir
 {:ok, job} =
   Kathikon.insert(Demo.AlwaysFailWorker, %{"card" => "4111"}, max_attempts: 2)
 
-{:ok, done} = Demo.await(job.id, :discarded, 25_000)
+{:ok, done} = Demo.await(job.id, :dead, 25_000)
 {done.state, done.errors}
 ```
 

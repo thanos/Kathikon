@@ -2,10 +2,14 @@
 
 All options are set under `config :kathikon, ...`.
 
+Requires `config :elixir, :time_zone_database, Tzdata.TimeZoneDatabase` when using `:timezone` or cron scheduling.
+
 ## Full example
 
 ```elixir
 # config/config.exs
+config :elixir, :time_zone_database, Tzdata.TimeZoneDatabase
+
 config :kathikon,
   queues: [
     default: [concurrency: 10],
@@ -19,7 +23,10 @@ config :kathikon,
   max_attempts: 20,
   timezone: "Etc/UTC",
   mnesia_copies: :auto,
-  storage_backend: Kathikon.Storage.Mnesia
+  storage_backend: Kathikon.Storage.Mnesia,
+  scheduler: Kathikon.Scheduler.BuiltIn,
+  cron_tick: true,
+  result: :store
 ```
 
 ## Options reference
@@ -35,6 +42,10 @@ config :kathikon,
 | `:timezone` | `"Etc/UTC"` | IANA zone for cron and naive `schedule_at` |
 | `:mnesia_copies` | `:auto` | Mnesia table storage — `:ram`, `:disc`, or `:auto` |
 | `:storage_backend` | `Kathikon.Storage.Mnesia` | Storage behaviour implementation |
+| `:scheduler` | `Kathikon.Scheduler.BuiltIn` | Scheduler adapter module |
+| `:cron_tick` | `true` | Start `Kathikon.Scheduler.BuiltIn.Tick` (set `false` in tests) |
+| `:result` | `:store` | Persist worker return values (`:store` or `:discard`) |
+| `:quantum_scheduler` | — | Quantum scheduler module when using `Scheduler.Quantum` |
 
 ### Queue options
 

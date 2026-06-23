@@ -129,7 +129,21 @@ Kathikon.Telemetry.attach_default_logger()
 | `:prune_interval` | `60000` | Pruner tick interval (ms) |
 | `:retention_period` | `7 days` | How long to keep terminal jobs (ms) |
 | `:max_attempts` | `20` | Default retry limit |
+| `:storage_backend` | `Kathikon.Storage.Mnesia` | Storage implementation |
 | `:mnesia_copies` | `:auto` | Mnesia storage: `:ram`, `:disc`, or `:auto` (`ram` on `nonode@nohost` and Livebook nodes) |
+
+## Examples
+
+Runnable scripts under `examples/` (use `mix run examples/<name>.exs`):
+
+| Script | Demonstrates |
+|--------|----------------|
+| [basic_worker.exs](examples/basic_worker.exs) | Insert and poll status |
+| [scheduled_job.exs](examples/scheduled_job.exs) | `schedule` with `:at` / `:in` |
+| [dead_letter_retry.exs](examples/dead_letter_retry.exs) | Failures, dead letter, rerun |
+| [batch_fanout_fanin.exs](examples/batch_fanout_fanin.exs) | Parent/child batches |
+| [reporting.exs](examples/reporting.exs) | `Kathikon.Report` summaries |
+| [quantum_scheduler_adapter.exs](examples/quantum_scheduler_adapter.exs) | Optional Quantum scheduler |
 
 ## Roadmap
 

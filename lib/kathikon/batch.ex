@@ -5,6 +5,18 @@ defmodule Kathikon.Batch do
   The parent job moves to `:waiting_for_children` without blocking a BEAM process.
   When the batch completes, an explicit continuation job is enqueued.
 
+  ## Examples
+
+      {:ok, parent} = Kathikon.Storage.insert(parent_job)
+
+      {:ok, batch} =
+        Kathikon.Batch.start(parent.id, [
+          {ChildWorker, %{"id" => 1}, [queue: :default]},
+          {ChildWorker, %{"id" => 2}, [queue: :default]}
+        ], on_complete: {ReportWorker, %{"parent_id" => parent.id}})
+
+      {:ok, %{status: :running}} = Kathikon.Batch.status(batch.batch_id)
+
   See `docs/batches.md`.
   """
 
@@ -20,6 +32,14 @@ defmodule Kathikon.Batch do
     * `:on_complete` — `{WorkerModule, args}` continuation when batch succeeds
     * `:success_policy` — `:all_succeeded` (default), `{:at_least, n}`, or `:allow_partial`
     * `:queue` — queue for child jobs
+
+  ## Examples
+
+      {:ok, batch} =
+        Kathikon.Batch.start(parent_job_id, [
+          {ProcessRowWorker, %{"row" => 1}, []},
+          {ProcessRowWorker, %{"row" => 2}, []}
+        ], on_complete: {SummarizeWorker, %{}})
   """
   @spec start(String.t(), [child_spec()], keyword()) :: {:ok, map()} | {:error, term()}
   def start(parent_job_id, child_specs, opts \\ []) when is_list(child_specs) do
@@ -72,7 +92,13 @@ defmodule Kathikon.Batch do
   end
 
   @doc """
-  Returns batch status by batch id (same as parent job id lookup via batch record).
+  Returns batch status by batch id.
+
+  ## Examples
+
+      {:ok, batch} = Kathikon.Batch.status(batch_id)
+      batch.status
+      #=> :running
   """
   @spec status(String.t()) :: {:ok, map()} | {:error, term()}
   def status(batch_id) do
@@ -84,6 +110,10 @@ defmodule Kathikon.Batch do
 
   @doc """
   Lists child job ids for a batch.
+
+  ## Examples
+
+      {:ok, child_ids} = Kathikon.Batch.children(batch_id)
   """
   @spec children(String.t()) :: {:ok, [String.t()]} | {:error, term()}
   def children(batch_id) do
@@ -94,6 +124,12 @@ defmodule Kathikon.Batch do
 
   @doc """
   Returns results for completed child jobs in a batch.
+
+  ## Examples
+
+      {:ok, results} = Kathikon.Batch.results(batch_id)
+
+      Enum.filter(results, &(&1.state == :completed))
   """
   @spec results(String.t()) :: {:ok, [map()]} | {:error, term()}
   def results(batch_id) do
@@ -110,6 +146,11 @@ defmodule Kathikon.Batch do
 
   @doc """
   Retries failed children in a batch.
+
+  ## Examples
+
+      {:ok, retried} = Kathikon.Batch.retry_failed(batch_id)
+      length(retried)
   """
   @spec retry_failed(String.t()) :: {:ok, [Job.t()]} | {:error, term()}
   def retry_failed(batch_id) do

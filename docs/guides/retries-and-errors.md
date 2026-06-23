@@ -1,6 +1,6 @@
 # Retries and errors
 
-Failed jobs are retried with exponential backoff until `max_attempts` is reached, then discarded.
+Failed jobs are retried with exponential backoff until `max_attempts` is reached, then moved to the dead-letter queue (`:dead`).
 
 To defer a job **without** counting as a failure, return `{:sleep, seconds}` from `perform/1` instead — see [Workers](workers.md).
 
@@ -48,7 +48,17 @@ Kathikon.insert(FlakyWorker, %{}, max_attempts: 3)
 Lifecycle:
 
 ```
-:executing → {:error, _} → :retryable → … → :discarded (attempts >= max_attempts)
+:running → {:error, _} → :retryable → … → :failed → :dead (attempts >= max_attempts)
+```
+
+## Dead-letter queue
+
+When retries are exhausted, jobs move to `:dead`:
+
+```elixir
+{:ok, jobs} = Kathikon.dead_jobs()
+{:ok, rerun} = Kathikon.retry_dead(job_id)
+{:ok, _} = Kathikon.discard_dead(job_id, :manual_cleanup)
 ```
 
 ## Error history
@@ -70,14 +80,7 @@ job.errors
 
 ## Discarded jobs
 
-When retries are exhausted:
-
-```elixir
-{:ok, job} = Kathikon.fetch(job_id)
-job.state  # :discarded
-```
-
-Telemetry emits `[:kathikon, :job, :discard]`. Discarded jobs are pruned after `retention_period` — see [Configuration](configuration.md).
+Workers can return `{:discard, reason}` for intentional permanent failure. Discarded jobs are pruned after `retention_period` — see [Configuration](configuration.md).
 
 ## Exceptions
 
@@ -88,9 +91,9 @@ def perform(_), do: raise("unexpected nil")
 # → {:error, {:exception, %RuntimeError{}, stacktrace}}
 ```
 
-## Orphaned executing jobs (Phase 1 limitation)
+## Orphaned running jobs (Phase 2)
 
-If the worker process crashes hard or the node dies while a job is `:executing`, it stays in that state until Phase 2 **lifeline** recovery. Plan workers and `max_attempts` accordingly.
+If the worker process crashes hard or the node dies while a job is `:running`, it stays in that state until Phase 2 **lifeline** recovery. Plan workers and `max_attempts` accordingly.
 
 ## Telemetry
 

@@ -48,5 +48,14 @@ defmodule Kathikon.BatchTest do
 
     assert {:ok, status} = Batch.status(batch.batch_id)
     assert status.status == :completed
+
+    assert {:ok, continuation} =
+             Storage.list_jobs([])
+             |> then(fn {:ok, jobs} ->
+               job = Enum.find(jobs, &(&1.args == %{"done" => true}))
+               if job, do: {:ok, job}, else: {:error, :not_found}
+             end)
+
+    assert continuation.worker == Kathikon.Workers.SuccessWorker
   end
 end

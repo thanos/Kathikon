@@ -8,35 +8,69 @@ defmodule Kathikon.Backend.Storage.Mnesia do
   alias Kathikon.Storage.Mnesia
 
   @doc false
-  def setup, do: Mnesia.setup()
-
+  defdelegate setup(), to: Mnesia
   @doc false
-  def clear_jobs!, do: Mnesia.clear_jobs!()
-
+  defdelegate clear_jobs!(), to: Mnesia
   @doc false
-  def reset!, do: Mnesia.reset!()
-
+  defdelegate reset!(), to: Mnesia
   @doc false
-  def insert(job), do: Mnesia.insert(job)
-
+  defdelegate insert(job), to: Mnesia
   @doc false
-  def update(job), do: Mnesia.update(job)
-
+  defdelegate update(job), to: Mnesia
   @doc false
-  def fetch(id), do: Mnesia.fetch(id)
-
+  defdelegate fetch(id), to: Mnesia
   @doc false
-  def claim(queue, now), do: Mnesia.claim(queue, now)
-
+  defdelegate claim(queue, now), to: Mnesia
   @doc false
-  def promote_scheduled(now), do: Mnesia.promote_scheduled(now)
-
+  defdelegate promote_scheduled(now), to: Mnesia
   @doc false
-  def prunable_jobs(cutoff), do: Mnesia.prunable_jobs(cutoff)
-
+  defdelegate prunable_jobs(cutoff), to: Mnesia
   @doc false
-  def delete(id), do: Mnesia.delete(id)
-
+  defdelegate delete(id), to: Mnesia
   @doc false
-  def all, do: Mnesia.all()
+  defdelegate all(), to: Mnesia
+  @doc false
+  defdelegate insert_job(job), to: Mnesia
+  @doc false
+  defdelegate get_job(id), to: Mnesia
+  @doc false
+  defdelegate update_job(id, changes), to: Mnesia
+  @doc false
+  defdelegate claim_job(id, claimant), to: Mnesia
+  @doc false
+  defdelegate claim_available_jobs(queue, limit, claimant), to: Mnesia
+  @doc false
+  defdelegate claim_and_start_available_jobs(queue, limit, claimant), to: Mnesia
+  @doc false
+  defdelegate start_job(job, claimant, now \\ DateTime.utc_now()), to: Mnesia
+  @doc false
+  defdelegate complete_job(id, result, metadata), to: Mnesia
+  @doc false
+  defdelegate fail_job(id, error, metadata), to: Mnesia
+  @doc false
+  defdelegate retry_job(id, opts \\ []), to: Mnesia
+  @doc false
+  defdelegate discard_job(id, reason, metadata), to: Mnesia
+  @doc false
+  defdelegate cancel_job(id, reason, metadata), to: Mnesia
+  @doc false
+  defdelegate list_jobs(opts \\ []), to: Mnesia
+  @doc false
+  defdelegate insert_history_event(job_id, event), to: Mnesia
+  @doc false
+  defdelegate list_history(job_id), to: Mnesia
+  @doc false
+  defdelegate move_to_dead_letter(id, reason, metadata), to: Mnesia
+  @doc false
+  defdelegate list_dead_jobs(opts \\ []), to: Mnesia
+  @doc false
+  defdelegate defer_job(id, scheduled_at, metadata), to: Mnesia
+  @doc false
+  defdelegate write_batch(batch), to: Mnesia
+  @doc false
+  defdelegate fetch_batch(batch_id), to: Mnesia
+  @doc false
+  defdelegate start_batch(parent_id, child_jobs, batch_attrs), to: Mnesia
+  @doc false
+  defdelegate record_batch_child_finished(child_job), to: Mnesia
 end

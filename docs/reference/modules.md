@@ -1,6 +1,6 @@
 # Module reference
 
-Public API and runtime modules for Kathikon v0.1.0. For narrative guides see the [documentation index](../documentation.html) or [quick start](../guides/quick-start.html).
+Public API and runtime modules for Kathikon v0.2.0. For narrative guides see the [documentation index](../documentation.html) or [quick start](../guides/quick-start.html).
 
 ---
 
@@ -14,7 +14,7 @@ Main entry point. Enqueue, cancel, and inspect jobs.
 @spec insert(module(), map(), keyword()) :: {:ok, Job.t()} | {:error, term()}
 ```
 
-Enqueues a job. Starts the target queue dispatcher if needed. Emits `[:kathikon, :job, :insert]`.
+Enqueues a job. Starts the target queue dispatcher if needed. Emits `[:kathikon, :job, :inserted]`.
 
 **Options**
 
@@ -130,7 +130,7 @@ Struct representing a durable job obligation.
 
 ### States
 
-`:scheduled` → `:available` → `:executing` → `:completed` | `:retryable` | `:discarded` | `:cancelled`
+`:scheduled` → `:available` → `:claimed` → `:running` → `:completed` | `:retryable` | `:dead` | `:cancelled`
 
 ### `build/3`
 
@@ -276,13 +276,17 @@ Registered as `{:dispatcher, queue}` in `Kathikon.Registry`.
 
 `start_link/1` options: `:queue`, `:config`, `:poll_interval`, `:storage` (defaults to `Kathikon.Storage`).
 
-### Kathikon.Scheduler
+### Kathikon.Scheduler.Promoter
 
 `GenServer` — ticks on `scheduler_interval`, calls `storage.promote_scheduled/1`.
 
-Registered as `Kathikon.Scheduler` when started by the application.
+Registered as `Kathikon.Scheduler.Promoter` when started by the application.
 
 `start_link/1` options: `:interval`, `:storage`, `:name` (`false` for unnamed test instances).
+
+### Kathikon.Scheduler
+
+Facade for scheduling APIs (`schedule/3`, `schedule_once/3`, etc.). Not a registered process.
 
 ### Kathikon.Pruner
 

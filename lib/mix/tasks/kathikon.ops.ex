@@ -15,6 +15,10 @@ defmodule Mix.Tasks.Kathikon.Ops do
       mix kathikon.ops purge --queue default --state completed
       mix kathikon.ops --node kathikon@host summary
 
+  Remote use requires a **named local node** and matching cookie on both sides:
+
+      elixir --name ops@127.0.0.1 --cookie SECRET -S mix kathikon.ops --node kathikon@127.0.0.1 summary
+
   Uses `Kathikon.Dashboard` locally or `Kathikon.Dashboard.RPC` on a remote node.
   """
 
@@ -187,14 +191,17 @@ defmodule Mix.Tasks.Kathikon.Ops do
     end
   end
 
-  defp rpc(nil, fun, args), do: apply(Kathikon.Dashboard, fun, args)
-
-  defp rpc(node, fun, args) do
+  defp rpc(node, fun, args) when not is_nil(node) do
     case Kathikon.Dashboard.RPC.call(node, fun, args) do
-      {:ok, result} -> {:ok, result}
-      {:error, reason} -> Mix.raise("RPC #{inspect(fun)} on #{node} failed: #{inspect(reason)}")
+      {:error, _} = err ->
+        Mix.raise("RPC #{inspect(fun)} on #{node} failed: #{inspect(elem(err, 1))}")
+
+      other ->
+        other
     end
   end
+
+  defp rpc(nil, fun, args), do: apply(Kathikon.Dashboard, fun, args)
 
   defp print_summary(rows) do
     header =

@@ -9,5 +9,6 @@ config :kathikon,
   max_attempts: 3,
   queues: [
     default: [concurrency: 10],
+    integration: [concurrency: 10],
     priority: [concurrency: 1]
   ]

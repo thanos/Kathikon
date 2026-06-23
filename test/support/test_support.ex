@@ -43,6 +43,14 @@ defmodule Kathikon.TestSupport do
     end
   end
 
+  def resume_all_queues! do
+    for queue <- Kathikon.Config.queue_names() do
+      Kathikon.resume_queue(queue)
+    end
+
+    :ok
+  end
+
   def stub_storage_defaults! do
     Mox.stub(@mock, :claim, fn _, _ -> :not_found end)
     Mox.stub(@mock, :claim_available_jobs, fn _, _, _ -> {:ok, []} end)

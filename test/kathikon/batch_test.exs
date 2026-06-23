@@ -6,6 +6,8 @@ defmodule Kathikon.BatchTest do
   setup do
     Storage.setup()
     Storage.clear_jobs!()
+    Kathikon.pause_queue(:default)
+    on_exit(fn -> Kathikon.resume_queue(:default) end)
     :ok
   end
 

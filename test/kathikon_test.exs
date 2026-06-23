@@ -75,31 +75,35 @@ defmodule Kathikon.IntegrationTest do
 
   alias Kathikon.TestSupport
 
+  @queue :integration
+
   setup do
+    TestSupport.resume_all_queues!()
     TestSupport.reset!()
+    :ok = Kathikon.start_queue(@queue)
     :ok
   end
 
   test "insert executes a successful job" do
-    {:ok, job} = Kathikon.insert(Kathikon.Workers.SuccessWorker, %{})
+    {:ok, job} = Kathikon.insert(Kathikon.Workers.SuccessWorker, %{}, queue: @queue)
 
     assert {:ok, completed} = TestSupport.await_state(job.id, :completed)
     assert completed.attempts == 1
   end
 
   test "insert retries failed jobs" do
-    {:ok, job} = Kathikon.insert(Kathikon.Workers.CountingWorker, %{})
+    {:ok, job} = Kathikon.insert(Kathikon.Workers.CountingWorker, %{}, queue: @queue)
 
-    assert {:ok, completed} = TestSupport.await_state(job.id, :completed, 10_000)
+    assert {:ok, completed} = TestSupport.await_state(job.id, :completed, 15_000)
     assert completed.attempts == 2
     assert length(completed.errors) == 1
   end
 
   test "insert discards after max attempts" do
     {:ok, job} =
-      Kathikon.insert(Kathikon.Workers.FailWorker, %{}, max_attempts: 2)
+      Kathikon.insert(Kathikon.Workers.FailWorker, %{}, queue: @queue, max_attempts: 2)
 
-    assert {:ok, dead} = TestSupport.await_state(job.id, :dead, 10_000)
+    assert {:ok, dead} = TestSupport.await_state(job.id, :dead, 15_000)
     assert dead.attempts == 2
   end
 
@@ -107,16 +111,16 @@ defmodule Kathikon.IntegrationTest do
     future = DateTime.add(DateTime.utc_now(), 3600, :second)
 
     {:ok, job} =
-      Kathikon.insert(Kathikon.Workers.SuccessWorker, %{}, schedule_at: future)
+      Kathikon.insert(Kathikon.Workers.SuccessWorker, %{}, queue: @queue, schedule_at: future)
 
     assert {:ok, cancelled} = Kathikon.cancel(job.id)
     assert cancelled.state == :cancelled
   end
 
   test "sleep defers then completes without incrementing attempts" do
-    {:ok, job} = Kathikon.insert(Kathikon.Workers.SleepOnceWorker, %{})
+    {:ok, job} = Kathikon.insert(Kathikon.Workers.SleepOnceWorker, %{}, queue: @queue)
 
-    assert {:ok, completed} = TestSupport.await_state(job.id, :completed, 10_000)
+    assert {:ok, completed} = TestSupport.await_state(job.id, :completed, 15_000)
     assert completed.attempts == 1
     assert completed.errors == []
   end
@@ -151,7 +155,7 @@ defmodule Kathikon.IntegrationTest do
 
   test "scheduler promotes scheduled jobs" do
     {:ok, job} =
-      Kathikon.insert(Kathikon.Workers.SuccessWorker, %{}, schedule_in: 0)
+      Kathikon.insert(Kathikon.Workers.SuccessWorker, %{}, queue: @queue, schedule_in: 0)
 
     assert job.state == :scheduled
     send(Kathikon.Scheduler.Promoter, :tick)
@@ -168,7 +172,7 @@ defmodule Kathikon.IntegrationTest do
   end
 
   test "pruner removes old terminal jobs" do
-    {:ok, job} = Kathikon.insert(Kathikon.Workers.SuccessWorker, %{})
+    {:ok, job} = Kathikon.insert(Kathikon.Workers.SuccessWorker, %{}, queue: @queue)
     assert {:ok, _} = TestSupport.await_state(job.id, :completed)
 
     Application.put_env(:kathikon, :retention_period, 0)

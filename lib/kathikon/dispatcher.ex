@@ -76,22 +76,14 @@ defmodule Kathikon.Dispatcher do
   defp claim_and_run(state, slots) do
     claimant = build_claimant(state)
 
-    case state.storage.claim_available_jobs(state.queue, slots, claimant) do
+    case state.storage.claim_and_start_available_jobs(state.queue, slots, claimant) do
       {:ok, jobs} ->
-        Enum.reduce(jobs, state, &start_claimed_job(&1, &2, claimant))
+        Enum.reduce(jobs, state, fn running, acc ->
+          emit_claim_telemetry(state.queue, running)
+          run_job(acc, running)
+        end)
 
       {:error, _} ->
-        state
-    end
-  end
-
-  defp start_claimed_job(job, state, claimant) do
-    case state.storage.start_job(job, claimant, DateTime.utc_now()) do
-      {:ok, running} ->
-        emit_claim_telemetry(state.queue, running)
-        run_job(state, running)
-
-      _ ->
         state
     end
   end
@@ -188,17 +180,15 @@ defmodule Kathikon.Dispatcher do
   defp defer_job(storage, job, seconds, metadata, duration) do
     at = DateTime.add(DateTime.utc_now(), seconds, :second)
 
-    storage.update_job(job.id, %{
-      state: :scheduled,
-      scheduled_at: at,
-      available_at: at,
-      started_at: nil,
-      claimed_at: nil,
-      claimant: nil
-    })
+    case storage.defer_job(job.id, at, Map.put(metadata, :seconds, seconds)) do
+      {:ok, _} ->
+        Telemetry.event([:job, :sleep], %{duration: duration}, metadata)
+        nil
 
-    Telemetry.event([:job, :sleep], %{duration: duration}, metadata)
-    nil
+      {:error, reason} ->
+        storage.fail_job(job.id, {:defer_failed, reason}, metadata)
+        |> emit_failure(metadata, duration)
+    end
   end
 
   defp emit_stop({:ok, job}, metadata, duration) do

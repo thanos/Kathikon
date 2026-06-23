@@ -2,7 +2,7 @@
 
 Kathikon (καθήκον — duty, obligation) is a BEAM-native durable job queue for Elixir. Jobs are persisted in Mnesia, executed by OTP supervisors and dispatchers, and tracked through an explicit state machine.
 
-**Current release:** v0.1.0 — Phase 1 (durable job queue)
+**Current release:** v0.2.0 — control, scheduling, batches, and correctness
 
 ## Guides
 
@@ -13,19 +13,32 @@ Start here if you are new to the library:
 | [Quick start](guides/quick-start.md) | Install, configure, define a worker, enqueue your first job |
 | [Workers](guides/workers.md) | The `Kathikon.Worker` behaviour, return values, errors |
 | [Queues & concurrency](guides/queues-and-concurrency.md) | Multiple queues, dispatcher concurrency, isolation |
-| [Scheduling](guides/scheduling.md) | `schedule_in`, `schedule_at`, scheduler promotion |
-| [Retries & errors](guides/retries-and-errors.md) | Backoff, `max_attempts`, discard, error recording |
+| [Scheduling](guides/scheduling.md) | `schedule_in`, `schedule_at`, cron, scheduler promotion |
+| [Retries & errors](guides/retries-and-errors.md) | Backoff, `max_attempts`, dead-letter, error recording |
 | [Cancellation](guides/cancellation.md) | When jobs can be cancelled, API usage |
 | [Telemetry](guides/telemetry-and-observability.md) | Events, measurements, metadata, custom handlers |
 | [Configuration](guides/configuration.md) | All `config :kathikon` keys and environments |
 | [Storage & embedding](guides/storage-and-embedding.md) | Mnesia setup, Livebook, tests, backends |
+
+## v0.2.0 topics
+
+| Document | Contents |
+|----------|----------|
+| [Storage](storage.md) | Storage behaviour, Mnesia tables, lifecycle |
+| [Job lifecycle](job_lifecycle.md) | State machine and history events |
+| [Scheduling](scheduling.md) | One-time and recurring schedules, timezone |
+| [Batches](batches.md) | Fan-out/fan-in parent/child workflows |
+| [Management API](management_api.md) | Claim, retry, dead-letter, queue control |
+| [Reporting](reporting.md) | Queue and failure summaries |
+| [Quantum adapter](quantum_adapter.md) | Optional Quantum scheduler integration |
+| [Architecture](architecture.md) | Supervision tree and runtime components |
 
 ## Reference
 
 | Document | Contents |
 |----------|----------|
 | [Module reference](reference/modules.md) | Every module and public function with examples |
-| [Interactive demo](../livebooks/kathikon_demo.livemd) | Livebook walkthrough of Phase 1 features |
+| [Interactive demo](../livebooks/kathikon_demo.livemd) | Livebook walkthrough |
 
 ## Architecture at a glance
 
@@ -33,8 +46,10 @@ Start here if you are new to the library:
 Kathikon.Supervisor
 ├── Registry
 ├── Kathikon.Queue          (DynamicSupervisor → one Dispatcher per queue)
-├── Kathikon.Scheduler      (promotes :scheduled → :available)
+├── Kathikon.QueueControl
+├── Kathikon.Scheduler.Promoter   (promotes :scheduled → :available)
+├── Kathikon.Scheduler.BuiltIn.Tick   (cron evaluation, optional)
 └── Kathikon.Pruner         (deletes terminal jobs after retention)
 ```
 
-Public API: `Kathikon.insert/3`, `Kathikon.cancel/1`, `Kathikon.fetch/1`, `Kathikon.all/0`, `Kathikon.start_queue/1`.
+Public API: `Kathikon.insert/3`, `Kathikon.schedule/3`, `Kathikon.cancel/1`, `Kathikon.fetch/1`, `Kathikon.all/0`, `Kathikon.start_queue/1`.

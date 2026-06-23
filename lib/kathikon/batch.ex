@@ -34,36 +34,39 @@ defmodule Kathikon.Batch do
         Enum.map(child_specs, fn spec ->
           {worker, args, child_opts} = normalize_spec(spec, queue)
 
-          job =
-            Job.build(
-              worker,
-              args,
-              Keyword.merge(child_opts, parent_job_id: parent_job_id, batch_id: batch_id)
-            )
-
-          job
+          Job.build(
+            worker,
+            args,
+            Keyword.merge(child_opts, parent_job_id: parent_job_id, batch_id: batch_id)
+          )
         end)
 
-      with {:ok, _} <- transition_parent_waiting(parent, batch_id),
-           {:ok, child_ids} <- insert_children(child_jobs),
-           {:ok, batch} <-
-             create_batch(batch_id, parent_job_id, child_ids, success_policy, on_complete, now) do
-        Telemetry.event([:batch, :started], %{children: length(child_ids)}, %{
-          batch_id: batch_id,
-          parent_job_id: parent_job_id
-        })
+      for job <- child_jobs, do: :ok = Kathikon.Queue.ensure_started(job.queue)
 
-        Storage.insert_history_event(parent_job_id, %{
-          id: generate_id(),
-          job_id: parent_job_id,
-          event: :batch_started,
-          from_state: parent.state,
-          to_state: :waiting_for_children,
-          metadata: %{batch_id: batch_id, child_count: length(child_ids)},
-          inserted_at: now
-        })
+      batch_attrs = %{
+        batch_id: batch_id,
+        status: :running,
+        success_count: 0,
+        failure_count: 0,
+        cancelled_count: 0,
+        success_policy: success_policy,
+        on_complete: on_complete,
+        created_at: now,
+        completed_at: nil,
+        metadata: %{}
+      }
 
-        {:ok, batch}
+      case Storage.start_batch(parent_job_id, child_jobs, batch_attrs) do
+        {:ok, batch} ->
+          Telemetry.event([:batch, :started], %{children: length(batch.child_job_ids)}, %{
+            batch_id: batch_id,
+            parent_job_id: parent_job_id
+          })
+
+          {:ok, batch}
+
+        other ->
+          other
       end
     end
   end
@@ -73,7 +76,7 @@ defmodule Kathikon.Batch do
   """
   @spec status(String.t()) :: {:ok, map()} | {:error, term()}
   def status(batch_id) do
-    case Storage.Mnesia.fetch_batch(batch_id) do
+    case Storage.fetch_batch(batch_id) do
       {:ok, batch} -> {:ok, batch}
       {:error, :not_found} -> {:error, :not_found}
     end
@@ -127,142 +130,22 @@ defmodule Kathikon.Batch do
           status: :running
       }
 
-      {:ok, _} = Storage.Mnesia.write_batch(updated)
+      {:ok, _} = Storage.write_batch(updated)
       {:ok, retried}
     end
   end
 
   @doc false
   def handle_child_finished(child_job) do
-    with batch_id when not is_nil(batch_id) <- child_job.batch_id,
-         {:ok, batch} <- status(batch_id),
-         {:ok, parent} <- Storage.fetch(batch.parent_job_id) do
-      {batch, parent} = update_counters(batch, parent, child_job)
-      maybe_complete_batch(batch, parent)
-    else
+    case Storage.record_batch_child_finished(child_job) do
+      {:ok, :ignored} -> :ok
+      {:ok, :already_finished} -> :ok
+      {:ok, :pending, _batch} -> :ok
+      {:ok, :complete, batch, parent} -> complete_batch(batch, parent)
+      {:ok, :fail, batch, parent} -> fail_batch(batch, parent)
       _ -> :ok
     end
   end
-
-  defp transition_parent_waiting(parent, batch_id) do
-    metadata = %{batch_id: batch_id}
-
-    Storage.update_job(parent.id, %{
-      state: :waiting_for_children,
-      batch_id: batch_id
-    })
-    |> tap(fn
-      {:ok, _} ->
-        Storage.insert_history_event(parent.id, %{
-          id: generate_id(),
-          job_id: parent.id,
-          event: :child_created,
-          from_state: parent.state,
-          to_state: :waiting_for_children,
-          metadata: metadata,
-          inserted_at: DateTime.utc_now()
-        })
-
-      _ ->
-        :ok
-    end)
-  end
-
-  defp insert_children(jobs) do
-    ids =
-      Enum.map(jobs, fn job ->
-        :ok = Kathikon.Queue.ensure_started(job.queue)
-        {:ok, inserted} = Storage.insert(job)
-
-        Storage.insert_history_event(inserted.id, %{
-          id: generate_id(),
-          job_id: inserted.id,
-          event: :child_created,
-          from_state: nil,
-          to_state: inserted.state,
-          metadata: %{parent_job_id: job.parent_job_id, batch_id: job.batch_id},
-          inserted_at: DateTime.utc_now()
-        })
-
-        inserted.id
-      end)
-
-    {:ok, ids}
-  end
-
-  defp create_batch(batch_id, parent_job_id, child_ids, success_policy, on_complete, now) do
-    batch = %{
-      batch_id: batch_id,
-      parent_job_id: parent_job_id,
-      child_job_ids: child_ids,
-      status: :running,
-      pending_count: length(child_ids),
-      success_count: 0,
-      failure_count: 0,
-      cancelled_count: 0,
-      success_policy: success_policy,
-      on_complete: on_complete,
-      created_at: now,
-      completed_at: nil,
-      metadata: %{}
-    }
-
-    Storage.Mnesia.write_batch(batch)
-  end
-
-  defp update_counters(batch, parent, child) do
-    batch =
-      case child.state do
-        :completed ->
-          %{
-            batch
-            | pending_count: batch.pending_count - 1,
-              success_count: batch.success_count + 1
-          }
-
-        state when state in [:failed, :dead, :discarded] ->
-          %{
-            batch
-            | pending_count: batch.pending_count - 1,
-              failure_count: batch.failure_count + 1
-          }
-
-        :cancelled ->
-          %{
-            batch
-            | pending_count: batch.pending_count - 1,
-              cancelled_count: batch.cancelled_count + 1
-          }
-
-        _ ->
-          batch
-      end
-
-    {:ok, _} = Storage.Mnesia.write_batch(batch)
-    {batch, parent}
-  end
-
-  defp maybe_complete_batch(batch, parent) do
-    if batch.pending_count > 0 do
-      :ok
-    else
-      success? = batch_succeeded?(batch)
-
-      if success? do
-        complete_batch(batch, parent)
-      else
-        fail_batch(batch, parent)
-      end
-    end
-  end
-
-  defp batch_succeeded?(%{success_policy: :all_succeeded, failure_count: 0, cancelled_count: 0}),
-    do: true
-
-  defp batch_succeeded?(%{success_policy: :allow_partial, success_count: s}) when s > 0, do: true
-
-  defp batch_succeeded?(%{success_policy: {:at_least, n}, success_count: s}), do: s >= n
-  defp batch_succeeded?(_), do: false
 
   defp complete_batch(batch, parent) do
     now = DateTime.utc_now()
@@ -273,7 +156,7 @@ defmodule Kathikon.Batch do
       })
 
     completed_batch = %{batch | status: :completed, completed_at: now}
-    {:ok, _} = Storage.Mnesia.write_batch(completed_batch)
+    {:ok, _} = Storage.write_batch(completed_batch)
 
     _ = enqueue_continuation(batch)
 
@@ -298,11 +181,11 @@ defmodule Kathikon.Batch do
     {:ok, _} =
       Storage.fail_job(parent.id, :batch_failed, %{
         batch_id: batch.batch_id,
-        attempt: parent.attempts + 1
+        attempt: parent.max_attempts
       })
 
     failed_batch = %{batch | status: :failed, completed_at: DateTime.utc_now()}
-    {:ok, _} = Storage.Mnesia.write_batch(failed_batch)
+    {:ok, _} = Storage.write_batch(failed_batch)
   end
 
   defp enqueue_continuation(%{on_complete: {worker, args}}) when is_atom(worker) do

@@ -8,7 +8,7 @@ Get a working job queue in your Elixir application in a few minutes.
 # mix.exs
 def deps do
   [
-    {:kathikon, "~> 0.1.0"}
+    {:kathikon, "~> 0.2.0"}
   ]
 end
 ```
@@ -64,7 +64,7 @@ The dispatcher claims the job, runs `perform/1` in a `Task`, and transitions the
 
 ```elixir
 {:ok, job} = Kathikon.fetch(job.id)
-job.state   # :completed | :executing | :retryable | ...
+job.state   # :completed | :running | :retryable | :dead | ...
 ```
 
 ## 6. Enable logging (development)

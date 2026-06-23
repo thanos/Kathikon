@@ -93,7 +93,7 @@ defmodule Kathikon.Scheduler.Quantum do
          :ok <- ensure_quantum!(),
          :ok <- ensure_scheduler_module!(),
          scheduler <- quantum_scheduler_module(),
-         true <- is_binary(cron) and function_exported?(scheduler, :update_job, 2),
+         true <- function_exported?(scheduler, :update_job, 2),
          {:ok, job} <- scheduler.update_job(schedule_id, schedule: cron) do
       {:ok, quantum_schedule_map(job)}
     else

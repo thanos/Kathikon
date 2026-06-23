@@ -328,6 +328,12 @@ defmodule Kathikon.CoverageTest do
   end
 
   describe "Batch workflows" do
+    setup do
+      Kathikon.pause_queue(:default)
+      on_exit(fn -> Kathikon.resume_queue(:default) end)
+      :ok
+    end
+
     defp finish_child(child_id, batch_id, state, result \\ :ok) do
       claimant = %{
         node: node(),

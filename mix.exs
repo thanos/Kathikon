@@ -80,7 +80,7 @@ defmodule Kathikon.MixProject do
       extras: extras(),
       groups_for_modules: [
         API: ~r/^Kathikon$/,
-        Core: ~r/^Kathikon\.(Job|Worker|Config|Storage|Telemetry|Report|Batch)$/,
+        Core: ~r/^Kathikon\.(Job|Worker|Config|Storage|Telemetry|Report|Batch|Dashboard)$/,
         Runtime: ~r/^Kathikon\.(Application|Queue|Dispatcher|Scheduler|Pruner)/,
         Storage: ~r/^Kathikon\.Storage/
       ],

@@ -325,15 +325,33 @@ defmodule Kathikon do
   def discard_dead(job_id, reason \\ nil),
     do: Storage.discard_job(job_id, reason || :dead_discarded, %{})
 
-  @doc false
+  @doc """
+  Pauses a queue — dispatchers stop claiming new jobs.
+
+  ## Examples
+
+      :ok = Kathikon.pause_queue(:emails)
+  """
   @spec pause_queue(atom()) :: :ok
   def pause_queue(queue), do: QueueControl.pause(queue)
 
-  @doc false
+  @doc """
+  Resumes a paused queue.
+
+  ## Examples
+
+      :ok = Kathikon.resume_queue(:emails)
+  """
   @spec resume_queue(atom()) :: :ok
   def resume_queue(queue), do: QueueControl.resume(queue)
 
-  @doc false
+  @doc """
+  Returns pause status for a queue.
+
+  ## Examples
+
+      %{queue: :default, paused: false} = Kathikon.queue_status(:default)
+  """
   @spec queue_status(atom()) :: map()
   def queue_status(queue), do: QueueControl.status(queue)
 

@@ -51,10 +51,10 @@ Kathikon.TestSupport.use_mock_storage!(context)
   Kathikon.Dispatcher.start_link(
     queue: :test,
     config: [concurrency: 1],
-    storage: Kathikon.Backend.Storage.Mock
+    storage: Kathikon.Storage.Mock
   )
 
-Mox.allow(Kathikon.Backend.Storage.Mock, self(), pid)
+Mox.allow(Kathikon.Storage.Mock, self(), pid)
 ```
 
 Do **not** reconfigure the global `storage_backend` in tests.
@@ -91,6 +91,9 @@ The behaviour is `Kathikon.Storage`. v0.2.0 ships one implementation (`Kathikon.
 | Table | Contents |
 |-------|----------|
 | `:kathikon_jobs` | Job records (id, serialized `%Kathikon.Job{}`) |
+| `:kathikon_history` | Durable lifecycle events |
+| `:kathikon_batches` | Batch coordination records |
+| `:kathikon_schedules` | Built-in cron schedule registrations |
 
 Queue configuration lives in `config :kathikon, queues:` (`Kathikon.Config`), not in Mnesia.
 

@@ -5,7 +5,7 @@ defmodule Kathikon.DispatcherTest do
 
   alias Kathikon.{Dispatcher, Job}
 
-  @mock Kathikon.Backend.Storage.Mock
+  @mock Kathikon.Storage.Mock
 
   setup :verify_on_exit!
 

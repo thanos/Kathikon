@@ -31,6 +31,10 @@ defmodule Kathikon.Queue do
 
   @doc """
   Ensures a dispatcher is running for the given queue.
+
+  ## Examples
+
+      :ok = Kathikon.Queue.ensure_started(:emails)
   """
   @spec ensure_started(atom()) :: :ok
   def ensure_started(queue) when is_atom(queue) do
@@ -46,6 +50,12 @@ defmodule Kathikon.Queue do
 
   @doc """
   Starts dispatchers for all configured queues.
+
+  Called automatically at application start.
+
+  ## Examples
+
+      :ok = Kathikon.Queue.start_configured()
   """
   @spec start_configured() :: :ok
   def start_configured do

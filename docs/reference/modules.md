@@ -102,6 +102,43 @@ Ensures a dispatcher is running for the queue.
 :ok = Kathikon.start_queue(:imports)
 ```
 
+### `schedule/3`
+
+```elixir
+@spec schedule(module(), map(), keyword()) :: {:ok, String.t()} | {:error, term()}
+```
+
+Enqueue a one-time or recurring job. Returns the new job id. Supports `:at`, `:in`, and `:cron` (requires `Tzdata` and `config :elixir, :time_zone_database`).
+
+```elixir
+{:ok, job_id} = Kathikon.schedule(DigestWorker, %{}, in: 3600)
+{:ok, job_id} = Kathikon.schedule(ReportWorker, %{}, cron: "0 9 * * 1")
+```
+
+### `status/1` and `history/1`
+
+```elixir
+{:ok, %{state: :completed, attempts: 1}} = Kathikon.status(job_id)
+events = Kathikon.history(job_id)
+```
+
+### `claim/2` and `claim_available/2`
+
+Management APIs for external runners. Prefer normal dispatcher execution for app workers.
+
+```elixir
+{:ok, job} = Kathikon.claim(job_id)
+{:ok, job} = Kathikon.claim_available(:imports)
+```
+
+### `retry/2`, `rerun/2`, `dead_jobs/1`
+
+```elixir
+{:ok, job} = Kathikon.retry(job_id)
+{:ok, job} = Kathikon.rerun(dead_job_id)
+Kathikon.dead_jobs(queue: :default)
+```
+
 ---
 
 ## Kathikon.Job
@@ -170,7 +207,13 @@ Behaviour for job workers.
 ### Callback
 
 ```elixir
-@callback perform(Kathikon.Job.t()) :: :ok | {:error, term()} | {:sleep, pos_integer()}
+@callback perform(Kathikon.Job.t()) ::
+            :ok
+            | {:ok, term()}
+            | {:error, term()}
+            | {:discard, term()}
+            | {:retry, term()}
+            | {:sleep, pos_integer()}
 ```
 
 ### Example
@@ -207,6 +250,10 @@ Runtime configuration readers. Set values in `config :kathikon, ...`.
 | `retention_period/0` | Terminal job retention ms |
 | `max_attempts/0` | Default retry limit |
 | `mnesia_copies/0` | `:ram` or `:disc` |
+| `storage_backend/0` | Configured storage module |
+| `scheduler/0` | Scheduler adapter module |
+| `timezone/0` | IANA timezone for cron |
+| `result_storage/0` | `:store` or `:discard` worker results |
 
 ```elixir
 Kathikon.Config.concurrency(:emails)  # 5
@@ -295,6 +342,25 @@ Facade for scheduling APIs (`schedule/3`, `schedule_once/3`, etc.). Not a regist
 Registered as `Kathikon.Pruner` when started by the application.
 
 `start_link/1` options: `:interval`, `:storage`, `:name` (`false` for unnamed test instances).
+
+### Kathikon.Batch
+
+Fan-out/fan-in workflows. Parent job enters `:waiting_for_children`; children carry `batch_id` and `parent_job_id` metadata.
+
+```elixir
+{:ok, batch} = Kathikon.Batch.start(parent_id, [
+  {ChildWorker, %{"id" => 1}, [queue: :default]}
+], on_complete: {ReportWorker, %{}})
+```
+
+### Kathikon.Report
+
+Queue and failure summaries for dashboards and ops.
+
+```elixir
+Kathikon.Report.queue_summary(:default)
+Kathikon.Report.failure_summary()
+```
 
 ### Kathikon.Cron
 

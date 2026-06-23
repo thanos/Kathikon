@@ -4,7 +4,7 @@ defmodule Kathikon.TestSupport do
   import ExUnit.Assertions
   import ExUnit.Callbacks, only: [on_exit: 2]
 
-  @mock Kathikon.Backend.Storage.Mock
+  @mock Kathikon.Storage.Mock
   @order_name Kathikon.TestOrder
 
   def use_mock_storage!(context) do

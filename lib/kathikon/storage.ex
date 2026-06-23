@@ -7,6 +7,13 @@ defmodule Kathikon.Storage do
 
   Default: `Kathikon.Storage.Mnesia`.
 
+  ## Examples
+
+      :ok = Kathikon.Storage.setup()
+
+      # Tests and Livebook embedding
+      Kathikon.Storage.reset!()
+
   See `docs/storage.md`.
   """
 
@@ -78,6 +85,13 @@ defmodule Kathikon.Storage do
 
   @doc """
   Ensures the storage backend schema and tables exist.
+
+  Called automatically on application start. Call explicitly when embedding
+  Kathikon in scripts, Livebook, or tests without the full application.
+
+  ## Examples
+
+      :ok = Kathikon.Storage.setup()
   """
   @spec setup() :: :ok
   def setup, do: backend_module().setup()

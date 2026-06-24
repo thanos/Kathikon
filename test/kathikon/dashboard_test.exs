@@ -459,20 +459,34 @@ defmodule Kathikon.Dashboard.RPCTest do
   end
 
   defp maybe_start_rpc_node do
-    case Node.start(@rpc_node) do
-      {:ok, _} -> :ok
-      {:error, {:already_started, _}} -> :ok
-      {:error, :already_started} -> :ok
+    with :ok <- start_rpc_node(),
+         :ok <- set_rpc_cookie(),
+         :pong <- :net_adm.ping(@rpc_node) do
+      :ok
+    else
       _ -> :unavailable
     end
-    |> then(fn
-      :unavailable ->
-        :unavailable
+  end
 
-      :ok ->
-        Node.set_cookie(@rpc_cookie)
+  defp start_rpc_node do
+    case Node.start(@rpc_node) do
+      {:ok, _} ->
         :ok
-    end)
+
+      {:error, {:already_started, _}} when node() == @rpc_node ->
+        :ok
+
+      {:error, :already_started} when node() == @rpc_node ->
+        :ok
+
+      _ ->
+        :unavailable
+    end
+  end
+
+  defp set_rpc_cookie do
+    Node.set_cookie(@rpc_cookie)
+    :ok
   end
 end
 

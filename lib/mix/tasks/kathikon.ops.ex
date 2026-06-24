@@ -24,6 +24,9 @@ defmodule Mix.Tasks.Kathikon.Ops do
 
   use Mix.Task
 
+  alias Kathikon.Dashboard
+  alias Kathikon.Dashboard.RPC
+
   @impl Mix.Task
   def run(args) do
     Mix.Task.run("app.start")
@@ -45,7 +48,10 @@ defmodule Mix.Tasks.Kathikon.Ops do
     case argv do
       [] ->
         Mix.shell().error("usage: mix kathikon.ops COMMAND [options]")
-        Mix.shell().error("commands: summary, jobs, show, pause, resume, cancel, retry, rerun, purge, prune")
+
+        Mix.shell().error(
+          "commands: summary, jobs, show, pause, resume, cancel, retry, rerun, purge, prune"
+        )
 
       [command | rest] ->
         run_command(command, rest, opts)
@@ -53,78 +59,66 @@ defmodule Mix.Tasks.Kathikon.Ops do
   end
 
   defp run_command(command, rest, opts) do
-    node = remote_node(opts)
+    dispatch_command(command, rest, remote_node(opts), opts)
+  end
 
-    case command do
-      "summary" ->
-        with {:ok, rows} <- rpc(node, :queue_summary, [[]]) do
-          print_summary(rows)
-        end
+  defp dispatch_command("summary", _rest, node, _opts) do
+    with {:ok, rows} <- rpc(node, :queue_summary, [[]]), do: print_summary(rows)
+  end
 
-      "jobs" ->
-        list_opts = list_job_opts(opts)
+  defp dispatch_command("jobs", _rest, node, opts) do
+    list_opts = list_job_opts(opts)
+    validate_pagination!(list_opts)
 
-        with {:ok, page} <- rpc(node, :list_jobs, [list_opts]) do
-          print_jobs(page)
-        end
+    with {:ok, page} <- rpc(node, :list_jobs, [list_opts]), do: print_jobs(page)
+  end
 
-      "show" ->
-        [job_id | _] = rest
+  defp dispatch_command("show", rest, node, _opts) do
+    case rest do
+      [job_id | _] when is_binary(job_id) and job_id != "" ->
+        with {:ok, detail} <- rpc(node, :fetch_job, [job_id]), do: print_job_detail(detail)
 
-        with {:ok, detail} <- rpc(node, :fetch_job, [job_id]) do
-          print_job_detail(detail)
-        end
-
-      "pause" ->
-        run_queue_action(node, :pause_queue, opts)
-
-      "resume" ->
-        run_queue_action(node, :resume_queue, opts)
-
-      "cancel" ->
-        case rest do
-          [job_id | _] ->
-            rpc(node, :cancel_job, [job_id]) |> print_result()
-
-          [] ->
-            with {:ok, result} <- rpc(node, :cancel_jobs, [filter_opts(opts)]) do
-              print_bulk(result)
-            end
-        end
-
-      "retry" ->
-        case rest do
-          [job_id | _] ->
-            rpc(node, :retry_job, [job_id]) |> print_result()
-
-          [] ->
-            with {:ok, result} <- rpc(node, :retry_jobs, [filter_opts(opts)]) do
-              print_bulk(result)
-            end
-        end
-
-      "rerun" ->
-        case rest do
-          [job_id | _] ->
-            rpc(node, :rerun_job, [job_id]) |> print_result()
-
-          [] ->
-            with {:ok, result} <- rpc(node, :rerun_jobs, [filter_opts(opts)]) do
-              print_bulk(result)
-            end
-        end
-
-      "purge" ->
-        with {:ok, result} <- rpc(node, :purge_jobs, [filter_opts(opts)]) do
-          IO.puts("Purged #{result.purged} job(s)")
-        end
-
-      "prune" ->
-        rpc(node, :prune_now, []) |> print_result()
-
-      other ->
-        Mix.raise("unknown command #{inspect(other)}")
+      _ ->
+        Mix.raise("usage: mix kathikon.ops show JOB_ID")
     end
+  end
+
+  defp dispatch_command("pause", _rest, node, opts),
+    do: run_queue_action(node, :pause_queue, opts)
+
+  defp dispatch_command("resume", _rest, node, opts),
+    do: run_queue_action(node, :resume_queue, opts)
+
+  defp dispatch_command("cancel", rest, node, opts),
+    do: run_job_or_bulk(rest, node, opts, :cancel_job, :cancel_jobs)
+
+  defp dispatch_command("retry", rest, node, opts),
+    do: run_job_or_bulk(rest, node, opts, :retry_job, :retry_jobs)
+
+  defp dispatch_command("rerun", rest, node, opts),
+    do: run_job_or_bulk(rest, node, opts, :rerun_job, :rerun_jobs)
+
+  defp dispatch_command("purge", _rest, node, opts) do
+    with {:ok, result} <- rpc(node, :purge_jobs, [filter_opts(opts)]) do
+      IO.puts("Purged #{result.purged} job(s)")
+      print_bulk_errors(Map.get(result, :errors, []))
+    end
+  end
+
+  defp dispatch_command("prune", _rest, node, _opts) do
+    rpc(node, :prune_now, []) |> print_result()
+  end
+
+  defp dispatch_command(command, _rest, _node, _opts) do
+    Mix.raise("unknown command #{inspect(command)}")
+  end
+
+  defp run_job_or_bulk([job_id | _], node, _opts, single, _bulk) do
+    rpc(node, single, [job_id]) |> print_result()
+  end
+
+  defp run_job_or_bulk([], node, opts, _single, bulk) do
+    with {:ok, result} <- rpc(node, bulk, [filter_opts(opts)]), do: print_bulk(result)
   end
 
   defp run_queue_action(node, fun, opts) do
@@ -174,7 +168,7 @@ defmodule Mix.Tasks.Kathikon.Ops do
         |> Enum.map(&String.to_atom/1)
 
       tab = opts[:tab] ->
-        Kathikon.Dashboard.states_for_tab(String.to_atom(tab))
+        Dashboard.states_for_tab(String.to_atom(tab))
 
       true ->
         nil
@@ -182,7 +176,30 @@ defmodule Mix.Tasks.Kathikon.Ops do
   end
 
   defp parse_tab(nil), do: nil
-  defp parse_tab(tab), do: String.to_atom(tab)
+
+  defp parse_tab(tab) do
+    atom = String.to_atom(tab)
+
+    if atom in Dashboard.state_tabs() do
+      atom
+    else
+      Mix.raise(
+        "unknown tab #{inspect(tab)} (expected one of #{inspect(Dashboard.state_tabs())})"
+      )
+    end
+  end
+
+  defp validate_pagination!(opts) do
+    if limit = Keyword.get(opts, :limit), do: validate_non_negative!(limit, "--limit")
+    if offset = Keyword.get(opts, :offset), do: validate_non_negative!(offset, "--offset")
+    :ok
+  end
+
+  defp validate_non_negative!(value, flag) when value < 0 do
+    Mix.raise("#{flag} must be non-negative")
+  end
+
+  defp validate_non_negative!(_value, _flag), do: :ok
 
   defp remote_node(opts) do
     case opts[:node] do
@@ -192,7 +209,7 @@ defmodule Mix.Tasks.Kathikon.Ops do
   end
 
   defp rpc(node, fun, args) when not is_nil(node) do
-    case Kathikon.Dashboard.RPC.call(node, fun, args) do
+    case RPC.call(node, fun, args) do
       {:error, _} = err ->
         Mix.raise("RPC #{inspect(fun)} on #{node} failed: #{inspect(elem(err, 1))}")
 
@@ -201,7 +218,7 @@ defmodule Mix.Tasks.Kathikon.Ops do
     end
   end
 
-  defp rpc(nil, fun, args), do: apply(Kathikon.Dashboard, fun, args)
+  defp rpc(nil, fun, args), do: apply(Dashboard, fun, args)
 
   defp print_summary(rows) do
     header =
@@ -266,10 +283,11 @@ defmodule Mix.Tasks.Kathikon.Ops do
   end
 
   defp print_job_detail(%{job: job, history: history}) do
-    IO.inspect(job, label: "job", pretty: true)
+    IO.puts("job:")
+    IO.puts(inspect(job, pretty: true, limit: :infinity))
     IO.puts("")
     IO.puts("history events: #{length(history)}")
-    Enum.each(history, &IO.inspect/1)
+    Enum.each(history, fn event -> IO.puts(inspect(event)) end)
   end
 
   defp print_result(:ok), do: IO.puts("ok")
@@ -278,17 +296,20 @@ defmodule Mix.Tasks.Kathikon.Ops do
     IO.puts("ok #{job.id} state=#{job.state}")
   end
 
-  defp print_result({:ok, other}), do: IO.inspect(other)
+  defp print_result({:ok, other}), do: IO.puts(inspect(other))
 
   defp print_result({:error, reason}), do: Mix.raise(inspect(reason))
 
   defp print_bulk(%{succeeded: n, errors: errors}) do
     IO.puts("succeeded: #{n}")
+    print_bulk_errors(errors)
+  end
 
-    unless errors == [] do
-      IO.puts("errors:")
-      Enum.each(errors, fn {id, reason} -> IO.puts("  #{id}: #{inspect(reason)}") end)
-    end
+  defp print_bulk_errors([]), do: :ok
+
+  defp print_bulk_errors(errors) do
+    IO.puts("errors:")
+    Enum.each(errors, fn {id, reason} -> IO.puts("  #{id}: #{inspect(reason)}") end)
   end
 
   defp format_timestamp(nil), do: "-"

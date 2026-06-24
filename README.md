@@ -5,15 +5,21 @@
 [![Hex version](https://img.shields.io/hexpm/v/kathikon.svg)](https://hex.pm/packages/kathikon)
 [![Hex Docs](https://img.shields.io/badge/hex-docs-8A33A3.svg)](https://hexdocs.pm/kathikon)
 
-**Kathikon** (Greek: καθήκον — duty, obligation) is a BEAM-native durable job queue and task execution platform for Elixir.
+**Kathikon** (Greek: καθήκον - duty, obligation) is a BEAM-native durable job queue and task execution platform for Elixir.
 
-Jobs are treated as durable obligations that must eventually be fulfilled: completed, retried, cancelled, or discarded — but never silently lost.
+Jobs are treated as durable obligations that must eventually be fulfilled: completed, retried, cancelled, or discarded - but never silently lost.
 
 Kathikon uses **Mnesia** as its coordination store and **OTP** as its execution substrate. No PostgreSQL, Redis, RabbitMQ, or external brokers are required.
 
 ## Status
 
-**v0.2.0 — Control, scheduling, batches, and correctness**
+**v0.2.1 - Operations tooling**
+
+- `Kathikon.Dashboard` - inspect and control facade for UIs and RPC
+- `mix kathikon.ops` - terminal CLI (`summary`, `jobs`, pause/resume, retry, purge, …)
+- Remote ops over Erlang distribution (`Kathikon.Dashboard.RPC`)
+
+**v0.2.0 - Control, scheduling, batches, and correctness**
 
 - Storage behaviour with atomic lifecycle operations
 - Formal job state machine and durable history
@@ -22,14 +28,14 @@ Kathikon uses **Mnesia** as its coordination store and **OTP** as its execution 
 - Management and reporting APIs
 - Parent/child batch workflows
 
-Previous: **v0.1.0 — Phase 1: Durable Job Queue**
+Previous: **v0.1.0 - Phase 1: Durable Job Queue**
 
 ## Installation
 
 ```elixir
 def deps do
   [
-    {:kathikon, "~> 0.2.0"}
+    {:kathikon, "~> 0.2.1"}
   ]
 end
 ```
@@ -97,6 +103,7 @@ Kathikon.Supervisor
 | `Kathikon.Job` | Job struct and state machine |
 | `Kathikon.Worker` | Worker behaviour (`perform/1`) |
 | `Kathikon.Storage` | Storage behaviour (default: `Kathikon.Storage.Mnesia`) |
+| `Kathikon.Dashboard` | Ops facade - queue summary, job lists, bulk control |
 | `Kathikon.Report` | Queue/job reporting helpers |
 | `Kathikon.Batch` | Fan-out/fan-in batch workflows |
 | `Kathikon.Scheduler.Promoter` | Promotes scheduled jobs to available |
@@ -150,6 +157,24 @@ Runnable scripts under `examples/` (use `mix run examples/<name>.exs`):
 | [reporting.exs](examples/reporting.exs) | `Kathikon.Report` summaries |
 | [quantum_scheduler_adapter.exs](examples/quantum_scheduler_adapter.exs) | Optional Quantum scheduler |
 
+## Operations CLI
+
+Inspect and control a running node from the terminal:
+
+```bash
+mix kathikon.ops summary
+mix kathikon.ops jobs --queue default --tab completed --limit 20
+mix kathikon.ops pause --all
+```
+
+Remote (named node + matching cookie on both sides):
+
+```bash
+elixir --name ops@127.0.0.1 --cookie SECRET -S mix kathikon.ops --node kathikon@127.0.0.1 summary
+```
+
+See [Management API](docs/management_api.md) and `Kathikon.Dashboard` docs.
+
 ## Roadmap
 
 | Phase | Focus |
@@ -161,7 +186,7 @@ Runnable scripts under `examples/` (use `mix run examples/<name>.exs`):
 | 5 | Batches (done in v0.2) |
 | 6 | Observability APIs (reporting done in v0.2) |
 | 7 | Workflows and DAGs |
-| 8 | Optional LiveView dashboard |
+| 8 | LiveView dashboard UI (ops API done in v0.2.1) |
 
 ## Documentation
 
@@ -172,7 +197,8 @@ mix docs
 open doc/index.html
 ```
 
-- **[Documentation index](docs/documentation.md)** — guides and module reference (source)
+- **[Documentation index](docs/documentation.md)** - guides and module reference (source)
+- [CHANGELOG](CHANGELOG.md) - release history
 - [Quick start](docs/guides/quick-start.md)
 - [Module reference](docs/reference/modules.md)
 - [Configuration](docs/guides/configuration.md)

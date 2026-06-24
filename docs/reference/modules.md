@@ -1,6 +1,6 @@
 # Module reference
 
-Public API and runtime modules for Kathikon v0.2.0. For narrative guides see the [documentation index](../documentation.html) or [quick start](../guides/quick-start.html).
+Public API and runtime modules for Kathikon v0.2.1. For narrative guides see the [documentation index](../documentation.html) or [quick start](../guides/quick-start.html).
 
 ---
 
@@ -358,9 +358,22 @@ Fan-out/fan-in workflows. Parent job enters `:waiting_for_children`; children ca
 Queue and failure summaries for dashboards and ops.
 
 ```elixir
-Kathikon.Report.queue_summary(:default)
+{:ok, summaries} = Kathikon.Report.queue_summary()
 Kathikon.Report.failure_summary()
 ```
+
+### Kathikon.Dashboard
+
+Operations facade for CLIs, LiveView, and RPC. See [Management API](../management_api.md) and [dashboard spec](../dashboard_spec.md).
+
+```elixir
+{:ok, queues} = Kathikon.Dashboard.queue_summary()
+{:ok, page} = Kathikon.Dashboard.list_jobs(queue: :default, tab: :completed, limit: 50)
+{:ok, detail} = Kathikon.Dashboard.fetch_job(job_id)
+:ok = Kathikon.Dashboard.pause_all()
+```
+
+CLI: `mix kathikon.ops summary`
 
 ### Kathikon.Cron
 

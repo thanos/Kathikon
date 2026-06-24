@@ -25,7 +25,9 @@ Kathikon.history(job_id)
 
 ## Dashboard facade
 
-`Kathikon.Dashboard` wraps reporting and management for CLIs, LiveView, and RPC:
+`Kathikon.Dashboard` extends `Kathikon.Report.queue_summary/1` with dashboard
+fields (`ui_counts`, queues seen in storage) and delegates management to
+`Kathikon.*` for CLIs, LiveView, and RPC:
 
 ```elixir
 {:ok, queues} = Kathikon.Dashboard.queue_summary()

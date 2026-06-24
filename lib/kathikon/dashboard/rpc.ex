@@ -8,7 +8,9 @@ defmodule Kathikon.Dashboard.RPC do
 
       node = :"kathikon@10.0.0.5"
 
+      # Returns the same value as the local Dashboard call — not wrapped again.
       {:ok, queues} = Kathikon.Dashboard.RPC.call(node, :queue_summary, [[]])
+      :ok = Kathikon.Dashboard.RPC.call(node, :pause_all, [])
       {:ok, page} = Kathikon.Dashboard.RPC.call(node, :list_jobs, [[queue: :default, limit: 20]])
 
   Only `Kathikon.Dashboard` functions should be invoked remotely — do not expose
@@ -20,19 +22,21 @@ defmodule Kathikon.Dashboard.RPC do
   @doc """
   Invokes `Kathikon.Dashboard.fun/arity` on `node` via `:rpc.call/5`.
 
-  Returns `{:ok, result}`, `{:error, :badrpc}`, or `{:error, :nodedown}`.
+  Returns the same value as the local `Kathikon.Dashboard` call, or
+  `{:error, :badrpc}`, `{:error, :nodedown}`, or `{:error, {:rpc_not_allowed, fun}}`.
   """
-  @spec call(node(), atom(), [term()], timeout()) :: term() | {:error, :badrpc | :nodedown | term()}
+  @spec call(node(), atom(), [term()], timeout()) ::
+          term() | {:error, :badrpc | :nodedown | term()}
   def call(node, fun, args \\ [], timeout \\ @default_timeout)
       when is_atom(fun) and is_list(args) do
-    unless allowed?(fun) do
-      {:error, {:rpc_not_allowed, fun}}
-    else
+    if allowed?(fun) do
       case :rpc.call(node, Kathikon.Dashboard, fun, args, timeout) do
         {:badrpc, :nodedown} -> {:error, :nodedown}
         {:badrpc, reason} -> {:error, {:badrpc, reason}}
         result -> result
       end
+    else
+      {:error, {:rpc_not_allowed, fun}}
     end
   end
 

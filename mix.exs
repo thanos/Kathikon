@@ -1,7 +1,7 @@
 defmodule Kathikon.MixProject do
   use Mix.Project
 
-  @version "0.2.0"
+  @version "0.2.1"
 
   def project do
     [
@@ -57,7 +57,7 @@ defmodule Kathikon.MixProject do
 
   defp dialyzer do
     [
-      plt_add_apps: [:mnesia],
+      plt_add_apps: [:mnesia, :mix],
       flags: [:unmatched_returns, :error_handling, :underspecs]
     ]
   end
@@ -65,7 +65,7 @@ defmodule Kathikon.MixProject do
   defp package do
     [
       name: "kathikon",
-      files: ~w(lib .formatter.exs mix.exs README.md LICENSE),
+      files: ~w(lib .formatter.exs mix.exs README.md LICENSE CHANGELOG.md),
       licenses: ["MIT"],
       maintainers: ["Thanos Vassilakis"],
       links: %{"GitHub" => "https://github.com/thanos/kathikon"}
@@ -85,7 +85,7 @@ defmodule Kathikon.MixProject do
         Storage: ~r/^Kathikon\.Storage/
       ],
       groups_for_extras: [
-        Introduction: ~r/(^README|docs\/documentation)/i,
+        Introduction: ~r/(^README|CHANGELOG|docs\/documentation)/i,
         Guides: ~r/docs\/guides\//,
         "v0.2.0":
           ~r/docs\/(storage|job_lifecycle|scheduling|quantum|batches|management|reporting|architecture|articles)/,
@@ -104,6 +104,7 @@ defmodule Kathikon.MixProject do
       "docs/quantum_adapter.md",
       "docs/batches.md",
       "docs/management_api.md",
+      "docs/dashboard_spec.md",
       "docs/reporting.md",
       "docs/architecture.md",
       "docs/articles/kathikon_v0_2_0_control_scheduling_batches.md",
@@ -119,6 +120,7 @@ defmodule Kathikon.MixProject do
       "docs/guides/storage-and-embedding.md",
       "docs/reference/modules.md",
       "README.md",
+      "CHANGELOG.md",
       LICENSE: [title: "License"],
       "docs/documentation.md": [title: "Documentation"],
       "livebooks/kathikon_demo.livemd": [title: "Interactive demo"]

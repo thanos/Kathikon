@@ -13,9 +13,10 @@ defmodule Kathikon do
       # Inspect
       {:ok, %{state: :completed}} = Kathikon.status(job.id)
 
-  See the [README](readme.html) and `docs/` guides for v0.2.0 features:
+  See the [README](readme.html) and `docs/` guides for v0.2.0+ features:
   atomic claiming, job history, dead-letter queue, scheduling, batches,
-  management APIs, and reporting.
+  management APIs, reporting, and v0.2.1 operations tooling (`Kathikon.Dashboard`,
+  `mix kathikon.ops`).
   """
 
   alias Kathikon.{Job, Queue, QueueControl, Storage, Telemetry}
@@ -325,15 +326,33 @@ defmodule Kathikon do
   def discard_dead(job_id, reason \\ nil),
     do: Storage.discard_job(job_id, reason || :dead_discarded, %{})
 
-  @doc false
+  @doc """
+  Pauses a queue — dispatchers stop claiming new jobs.
+
+  ## Examples
+
+      :ok = Kathikon.pause_queue(:emails)
+  """
   @spec pause_queue(atom()) :: :ok
   def pause_queue(queue), do: QueueControl.pause(queue)
 
-  @doc false
+  @doc """
+  Resumes a paused queue.
+
+  ## Examples
+
+      :ok = Kathikon.resume_queue(:emails)
+  """
   @spec resume_queue(atom()) :: :ok
   def resume_queue(queue), do: QueueControl.resume(queue)
 
-  @doc false
+  @doc """
+  Returns pause status for a queue.
+
+  ## Examples
+
+      %{queue: :default, paused: false} = Kathikon.queue_status(:default)
+  """
   @spec queue_status(atom()) :: map()
   def queue_status(queue), do: QueueControl.status(queue)
 

@@ -63,8 +63,13 @@ defmodule Kathikon.Storage.Mnesia.SetupTest do
 
   test "setup starts mnesia when it is not running" do
     if :mnesia.system_info(:is_running) == :yes do
+      Kathikon.TestSupport.stop_runtime!()
       :mnesia.stop()
-      on_exit(fn -> :mnesia.start() end)
+
+      on_exit(fn ->
+        :mnesia.start()
+        Kathikon.TestSupport.ensure_runtime!()
+      end)
     end
 
     assert :ok = Mnesia.setup()

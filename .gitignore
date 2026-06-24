@@ -22,3 +22,5 @@ kathikon-*.tar
 # Temporary files, for example, from tests.
 /tmp/
 /baoulo/
+.DS_Store
+Mnesia.*

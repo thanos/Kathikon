@@ -17,6 +17,7 @@ defmodule Kathikon.Storage.Mnesia.IntegrationTest do
       ensure_mnesia!()
       Storage.setup()
       Storage.clear_jobs!()
+      Kathikon.TestSupport.ensure_runtime!()
     end)
 
     :ok
@@ -86,6 +87,7 @@ defmodule Kathikon.Storage.Mnesia.IntegrationTest do
   end
 
   test "setup initializes a brand-new mnesia schema" do
+    Kathikon.TestSupport.stop_runtime!()
     :mnesia.stop()
     :ok = :mnesia.delete_schema([node()])
 
@@ -99,10 +101,12 @@ defmodule Kathikon.Storage.Mnesia.IntegrationTest do
 
     on_exit(fn -> Application.delete_env(:kathikon, :mnesia_copies) end)
 
+    Kathikon.TestSupport.stop_runtime!()
     :mnesia.stop()
     :ok = :mnesia.delete_schema([node()])
 
     assert :ok = Mnesia.setup()
+    Kathikon.TestSupport.ensure_runtime!()
     assert :kathikon_jobs in :mnesia.system_info(:tables)
     assert node() in :mnesia.table_info(:kathikon_jobs, :disc_copies)
   end
@@ -112,15 +116,19 @@ defmodule Kathikon.Storage.Mnesia.IntegrationTest do
 
     on_exit(fn -> Application.delete_env(:kathikon, :mnesia_copies) end)
 
+    Kathikon.TestSupport.stop_runtime!()
     :mnesia.stop()
     assert :ok = Mnesia.reset!()
+    Kathikon.TestSupport.ensure_runtime!()
 
     job = available_job()
     {:ok, inserted} = Storage.insert(job)
 
+    Kathikon.TestSupport.stop_runtime!()
     :mnesia.stop()
     :mnesia.start()
     :ok = :mnesia.wait_for_tables([:kathikon_jobs], 5_000)
+    Kathikon.TestSupport.ensure_runtime!()
 
     assert {:ok, fetched} = Storage.fetch(inserted.id)
     assert fetched.id == inserted.id
@@ -154,6 +162,7 @@ defmodule Kathikon.Storage.Mnesia.IntegrationTest do
   end
 
   test "reset! bootstraps storage when mnesia is stopped" do
+    Kathikon.TestSupport.stop_runtime!()
     :mnesia.stop()
     refute :mnesia.system_info(:is_running) == :yes
 
@@ -179,6 +188,7 @@ defmodule Kathikon.Storage.Mnesia.IntegrationTest do
   end
 
   test "setup starts mnesia when it is not running" do
+    Kathikon.TestSupport.stop_runtime!()
     :mnesia.stop()
     refute :mnesia.system_info(:is_running) == :yes
 

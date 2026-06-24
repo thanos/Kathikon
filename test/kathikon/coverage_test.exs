@@ -6,6 +6,7 @@ defmodule Kathikon.CoverageTest do
   alias Kathikon.Scheduler.Quantum
 
   setup do
+    Kathikon.TestSupport.ensure_runtime!()
     Storage.setup()
     Storage.clear_jobs!()
     Kathikon.TestQuantumScheduler.reset!()
@@ -100,6 +101,31 @@ defmodule Kathikon.CoverageTest do
     test "insert stores jobs through the public API" do
       assert {:ok, job} = Kathikon.insert(Kathikon.Workers.SuccessWorker, %{"x" => 1})
       assert job.state in [:available, :scheduled]
+    end
+
+    test "schedule at and in through the public API" do
+      at = DateTime.add(DateTime.utc_now(), 60, :second)
+
+      assert {:ok, at_job_id} =
+               Kathikon.schedule(Kathikon.Workers.SuccessWorker, %{}, at: at, queue: :default)
+
+      assert is_binary(at_job_id)
+
+      assert {:ok, in_job_id} =
+               Kathikon.schedule(Kathikon.Workers.SuccessWorker, %{}, in: 60, queue: :default)
+
+      assert is_binary(in_job_id)
+    end
+
+    test "schedule cron through the public API" do
+      assert {:ok, schedule_id} =
+               Kathikon.schedule(Kathikon.Workers.SuccessWorker, %{},
+                 cron: "0 9 * * *",
+                 queue: :default
+               )
+
+      assert is_binary(schedule_id)
+      assert :ok = Kathikon.Cron.cancel(schedule_id)
     end
   end
 

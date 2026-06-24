@@ -16,7 +16,9 @@ defmodule Kathikon.Report do
   alias Kathikon.{Config, Job, Storage}
 
   @doc """
-  Summarizes each queue with job counts by state.
+  Summarizes each configured queue with job counts by state.
+
+  Options are reserved for future filtering and are currently ignored.
 
   ## Examples
 
@@ -157,7 +159,13 @@ defmodule Kathikon.Report do
     end
   end
 
-  defp count_by_state(jobs) do
+  @doc """
+  Groups jobs by state and returns a count map.
+
+  Used by reporting helpers and available for custom dashboards.
+  """
+  @spec count_by_state([Job.t()]) :: %{atom() => non_neg_integer()}
+  def count_by_state(jobs) do
     jobs
     |> Enum.group_by(& &1.state)
     |> Enum.map(fn {state, list} -> {state, length(list)} end)

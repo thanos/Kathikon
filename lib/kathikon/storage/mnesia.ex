@@ -497,6 +497,40 @@ defmodule Kathikon.Storage.Mnesia do
   end
 
   @impl true
+  def list_jobs_page(opts \\ []) do
+    queue = Keyword.get(opts, :queue)
+    states = Keyword.get(opts, :states)
+    limit = Keyword.get(opts, :limit, 50)
+    offset = Keyword.get(opts, :offset, 0)
+    order = Keyword.get(opts, :order, :newest)
+
+    transaction(fn ->
+      jobs =
+        all_jobs()
+        |> Enum.filter(fn job ->
+          (is_nil(queue) or job.queue == queue) and
+            (is_nil(states) or job.state in states)
+        end)
+        |> sort_jobs_for_page(order)
+
+      %{jobs: jobs |> Enum.drop(offset) |> Enum.take(limit), total: length(jobs)}
+    end)
+    |> normalize_transaction()
+  end
+
+  defp sort_jobs_for_page(jobs, :newest) do
+    Enum.sort_by(jobs, &job_page_sort_time/1, {:desc, DateTime})
+  end
+
+  defp sort_jobs_for_page(jobs, :oldest) do
+    Enum.sort_by(jobs, &job_page_sort_time/1, DateTime)
+  end
+
+  defp job_page_sort_time(job) do
+    job.inserted_at || job.available_at || DateTime.utc_now()
+  end
+
+  @impl true
   def list_dead_jobs(opts \\ []) do
     list_jobs(Keyword.put(opts, :state, :dead))
   end

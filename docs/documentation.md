@@ -2,7 +2,16 @@
 
 Kathikon (καθήκον — duty, obligation) is a BEAM-native durable job queue for Elixir. Jobs are persisted in Mnesia, executed by OTP supervisors and dispatchers, and tracked through an explicit state machine.
 
-**Current release:** v0.2.0 — control, scheduling, batches, and correctness
+**Current release:** v0.2.1 — operations tooling (`Kathikon.Dashboard`, `mix kathikon.ops`)
+
+Previous: **v0.2.0** — control, scheduling, batches, and correctness
+
+## v0.2.1 topics
+
+| Document | Contents |
+|----------|----------|
+| [Management API](management_api.md) | Dashboard facade, `mix kathikon.ops`, remote RPC |
+| [Dashboard spec](dashboard_spec.md) | Operator UI layout, state tabs, and API mapping |
 
 ## Guides
 
@@ -65,4 +74,4 @@ Kathikon.Supervisor
 └── Kathikon.Pruner         (deletes terminal jobs after retention)
 ```
 
-Public API: `Kathikon.insert/3`, `Kathikon.schedule/3`, `Kathikon.cancel/1`, `Kathikon.fetch/1`, `Kathikon.status/1`, `Kathikon.history/1`, `Kathikon.all/0`, `Kathikon.start_queue/1`, `Kathikon.claim/2`, `Kathikon.retry/2`, `Kathikon.dead_jobs/1`.
+Public API: `Kathikon.insert/3`, `Kathikon.schedule/3`, `Kathikon.cancel/1`, `Kathikon.fetch/1`, `Kathikon.status/1`, `Kathikon.history/1`, `Kathikon.all/0`, `Kathikon.start_queue/1`, `Kathikon.claim/2`, `Kathikon.retry/2`, `Kathikon.dead_jobs/1`, `Kathikon.Dashboard.*`, `mix kathikon.ops`.

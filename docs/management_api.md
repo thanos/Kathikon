@@ -22,3 +22,30 @@ Kathikon.history(job_id)
 ## Rerun semantics
 
 `Kathikon.rerun/2` creates a **new** linked job. The original record is unchanged. The new job sets `rerun_of` and `original_job_id` for audit trails.
+
+## Dashboard facade
+
+`Kathikon.Dashboard` extends `Kathikon.Report.queue_summary/1` with dashboard
+fields (`ui_counts`, queues seen in storage) and delegates management to
+`Kathikon.*` for CLIs, LiveView, and RPC:
+
+```elixir
+{:ok, queues} = Kathikon.Dashboard.queue_summary()
+{:ok, page} = Kathikon.Dashboard.list_jobs(queue: :default, tab: :completed, limit: 50)
+{:ok, detail} = Kathikon.Dashboard.fetch_job(job_id)
+:ok = Kathikon.Dashboard.pause_all()
+```
+
+CLI: `mix kathikon.ops summary`
+
+Remote: `mix kathikon.ops --node kathikon@host summary` (via `Kathikon.Dashboard.RPC`).
+
+Both nodes must share the same Erlang cookie. The machine running `mix kathikon.ops` must be a **named node**, for example:
+
+```bash
+# Terminal 1 — remote Kathikon node
+elixir --name kathikon@127.0.0.1 --cookie SECRET -S mix run --no-halt
+
+# Terminal 2 — ops CLI
+elixir --name ops@127.0.0.1 --cookie SECRET -S mix kathikon.ops --node kathikon@127.0.0.1 summary
+```

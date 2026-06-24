@@ -23,6 +23,19 @@ defmodule Kathikon.ReportTest do
     assert counts[:available] == 1
   end
 
+  test "count_by_state groups jobs" do
+    jobs = [
+      Job.build(Kathikon.Workers.SuccessWorker, %{}, queue: :default)
+      |> Map.put(:state, :available),
+      Job.build(Kathikon.Workers.SuccessWorker, %{}, queue: :default)
+      |> Map.put(:state, :available),
+      Job.build(Kathikon.Workers.SuccessWorker, %{}, queue: :default)
+      |> Map.put(:state, :completed)
+    ]
+
+    assert Report.count_by_state(jobs) == %{available: 2, completed: 1}
+  end
+
   test "throughput and latency" do
     now = DateTime.utc_now()
 

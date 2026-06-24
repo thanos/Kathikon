@@ -6,6 +6,7 @@ defmodule Kathikon.CoverageTest do
   alias Kathikon.Scheduler.Quantum
 
   setup do
+    Kathikon.TestSupport.ensure_runtime!()
     Storage.setup()
     Storage.clear_jobs!()
     Kathikon.TestQuantumScheduler.reset!()

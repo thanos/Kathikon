@@ -6,6 +6,13 @@ Kathikon (καθήκον — duty, obligation) is a BEAM-native durable job queu
 
 Previous: **v0.2.0** — control, scheduling, batches, and correctness
 
+## v0.2.1 topics
+
+| Document | Contents |
+|----------|----------|
+| [Management API](management_api.md) | Dashboard facade, `mix kathikon.ops`, remote RPC |
+| [Dashboard spec](dashboard_spec.md) | Operator UI layout, state tabs, and API mapping |
+
 ## Guides
 
 Start here if you are new to the library:
@@ -30,8 +37,7 @@ Start here if you are new to the library:
 | [Job lifecycle](job_lifecycle.md) | State machine and history events |
 | [Scheduling](scheduling.md) | One-time and recurring schedules, timezone |
 | [Batches](batches.md) | Fan-out/fan-in parent/child workflows |
-| [Management API](management_api.md) | Claim, retry, dead-letter, queue control, Dashboard, ops CLI |
-| [Dashboard spec](dashboard_spec.md) | Operator UI layout, state tabs, and Dashboard API mapping |
+| [Management API](management_api.md) | Claim, retry, dead-letter, queue control |
 | [Reporting](reporting.md) | Queue and failure summaries |
 | [Quantum adapter](quantum_adapter.md) | Optional Quantum scheduler integration |
 | [Architecture](architecture.md) | Supervision tree and runtime components |

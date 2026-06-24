@@ -5,24 +5,33 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.2.1] - 2026-06-23
+## [0.2.1] - 2026-06-24
 
 ### Added
 
 - `Kathikon.Dashboard` — operations facade for queue summaries, paginated job lists, job drill-down, bulk cancel/retry/rerun/discard/purge, and `actions_for_state/1` for UIs.
 - `Kathikon.Dashboard.RPC` — whitelisted remote calls over Erlang distribution.
 - `mix kathikon.ops` — terminal CLI for inspect and control (`summary`, `jobs`, `show`, `pause`, `resume`, `cancel`, `retry`, `rerun`, `purge`, `prune`).
+- `Storage.list_jobs_page/1` — storage-level pagination for dashboard job lists.
 - Public `@doc` for `Kathikon.pause_queue/1`, `resume_queue/1`, and `queue_status/1`.
-- Dashboard and ops coverage in `test/kathikon/dashboard_test.exs`.
+- Public `Kathikon.Report.count_by_state/1` for shared state counting.
+- `docs/dashboard_spec.md` — operator UI layout, state tabs, and Dashboard API mapping.
+- Expanded dashboard, ops, RPC, cron expression, and queue test coverage.
 
 ### Fixed
 
 - `Kathikon.Dashboard.RPC.call/4` no longer double-wraps `{:ok, result}` tuples from remote nodes (fixes `mix kathikon.ops --node … summary`).
+- `Dashboard.queue_summary/1` extends `Kathikon.Report` and includes queues present in storage but not in config.
+- `Dashboard.pause_all/1` and `resume_all/1` operate on all known queues (storage + config).
+- `Dashboard.purge_jobs/1` returns per-job delete failures in `errors`.
+- Running jobs no longer expose `:discard` in `actions_for_state/1`.
+- `mix kathikon.ops` validates missing job IDs, negative pagination, and unknown state tabs.
 
 ### Documentation
 
 - Management API guide expanded with Dashboard and remote ops examples.
-- Module reference grouping includes `Kathikon.Dashboard` in ExDoc.
+- Module reference and documentation index updated for v0.2.1.
+- `Kathikon.Dashboard` included in ExDoc module grouping.
 
 ## [0.2.0] - 2026-06-23
 

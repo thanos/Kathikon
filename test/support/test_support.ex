@@ -43,6 +43,21 @@ defmodule Kathikon.TestSupport do
     end
   end
 
+  def stop_runtime! do
+    Application.stop(:kathikon)
+    :ok
+  end
+
+  def ensure_runtime! do
+    if Process.whereis(Kathikon.Queue) do
+      :ok
+    else
+      _ = Application.stop(:kathikon)
+      {:ok, _} = Application.ensure_all_started(:kathikon)
+      :ok
+    end
+  end
+
   def resume_all_queues! do
     for queue <- Kathikon.Config.queue_names() do
       Kathikon.resume_queue(queue)

@@ -404,11 +404,23 @@ defmodule Kathikon.Dashboard.RPCTest do
   @rpc_node :"kathikon_rpc@127.0.0.1"
   @rpc_cookie :kathikon_rpc_test_cookie
 
-  setup do
-    Kathikon.Storage.setup()
-    Kathikon.Storage.clear_jobs!()
-    ensure_rpc_node!()
-    :ok
+  setup context do
+    if Map.get(context, :rpc_node) do
+      case maybe_start_rpc_node() do
+        :unavailable ->
+          {:ok, skip: "Cannot start distributed node for RPC tests"}
+
+        :ok ->
+          Kathikon.TestSupport.ensure_runtime!()
+          Kathikon.Storage.setup()
+          Kathikon.Storage.clear_jobs!()
+          :ok
+      end
+    else
+      Kathikon.Storage.setup()
+      Kathikon.Storage.clear_jobs!()
+      :ok
+    end
   end
 
   test "allowed? whitelists dashboard functions" do
@@ -441,18 +453,26 @@ defmodule Kathikon.Dashboard.RPCTest do
              RPC.call(:"kathikon_unreachable@127.0.0.1", :queue_summary, [[]])
   end
 
+  @tag :rpc_node
   test "call returns badrpc when remote invocation fails" do
     assert {:error, {:badrpc, _reason}} = RPC.call(@rpc_node, :fetch_job, [123])
   end
 
-  defp ensure_rpc_node! do
+  defp maybe_start_rpc_node do
     case Node.start(@rpc_node) do
       {:ok, _} -> :ok
       {:error, {:already_started, _}} -> :ok
       {:error, :already_started} -> :ok
+      _ -> :unavailable
     end
+    |> then(fn
+      :unavailable ->
+        :unavailable
 
-    Node.set_cookie(@rpc_cookie)
+      :ok ->
+        Node.set_cookie(@rpc_cookie)
+        :ok
+    end)
   end
 end
 

@@ -88,6 +88,29 @@ defmodule Kathikon.ApiTest do
     assert {:ok, ^job} = Kathikon.fetch("id")
     assert Kathikon.all() == [job]
   end
+
+  test "retry and rerun skip telemetry side effects on error" do
+    Mox.expect(Kathikon.Storage.Mock, :retry_job, fn "id", _ -> {:error, :nope} end)
+    assert {:error, :nope} = Kathikon.retry("id")
+
+    job = sample_job(:dead)
+
+    Mox.expect(Kathikon.Storage.Mock, :fetch, fn "dead" -> {:ok, job} end)
+
+    Mox.expect(Kathikon.Storage.Mock, :insert, fn _ ->
+      {:error, :insert_failed}
+    end)
+
+    assert {:error, :insert_failed} = Kathikon.rerun("dead")
+  end
+
+  test "cancel skips telemetry when storage returns an error" do
+    Mox.expect(Kathikon.Storage.Mock, :cancel_job, fn "id", _, _ ->
+      {:error, :nope}
+    end)
+
+    assert {:error, :nope} = Kathikon.cancel("id")
+  end
 end
 
 defmodule Kathikon.SchedulerPrunerTest do

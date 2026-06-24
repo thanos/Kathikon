@@ -2,7 +2,9 @@
 
 Kathikon (καθήκον — duty, obligation) is a BEAM-native durable job queue for Elixir. Jobs are persisted in Mnesia, executed by OTP supervisors and dispatchers, and tracked through an explicit state machine.
 
-**Current release:** v0.2.0 — control, scheduling, batches, and correctness
+**Current release:** v0.2.1 — operations tooling (`Kathikon.Dashboard`, `mix kathikon.ops`)
+
+Previous: **v0.2.0** — control, scheduling, batches, and correctness
 
 ## Guides
 
@@ -28,7 +30,8 @@ Start here if you are new to the library:
 | [Job lifecycle](job_lifecycle.md) | State machine and history events |
 | [Scheduling](scheduling.md) | One-time and recurring schedules, timezone |
 | [Batches](batches.md) | Fan-out/fan-in parent/child workflows |
-| [Management API](management_api.md) | Claim, retry, dead-letter, queue control |
+| [Management API](management_api.md) | Claim, retry, dead-letter, queue control, Dashboard, ops CLI |
+| [Dashboard spec](dashboard_spec.md) | Operator UI layout, state tabs, and Dashboard API mapping |
 | [Reporting](reporting.md) | Queue and failure summaries |
 | [Quantum adapter](quantum_adapter.md) | Optional Quantum scheduler integration |
 | [Architecture](architecture.md) | Supervision tree and runtime components |
@@ -65,4 +68,4 @@ Kathikon.Supervisor
 └── Kathikon.Pruner         (deletes terminal jobs after retention)
 ```
 
-Public API: `Kathikon.insert/3`, `Kathikon.schedule/3`, `Kathikon.cancel/1`, `Kathikon.fetch/1`, `Kathikon.status/1`, `Kathikon.history/1`, `Kathikon.all/0`, `Kathikon.start_queue/1`, `Kathikon.claim/2`, `Kathikon.retry/2`, `Kathikon.dead_jobs/1`.
+Public API: `Kathikon.insert/3`, `Kathikon.schedule/3`, `Kathikon.cancel/1`, `Kathikon.fetch/1`, `Kathikon.status/1`, `Kathikon.history/1`, `Kathikon.all/0`, `Kathikon.start_queue/1`, `Kathikon.claim/2`, `Kathikon.retry/2`, `Kathikon.dead_jobs/1`, `Kathikon.Dashboard.*`, `mix kathikon.ops`.

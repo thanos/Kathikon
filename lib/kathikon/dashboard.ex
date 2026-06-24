@@ -2,11 +2,10 @@ defmodule Kathikon.Dashboard do
   @moduledoc """
   Operations and reporting facade for dashboards, CLIs, and RPC consumers.
 
-  Wraps `Kathikon.Report` and management APIs with stable shapes for UIs.
-  Does not access Mnesia directly — only `Kathikon`, `Kathikon.Storage`, and
-  `Kathikon.QueueControl`.
+  Extends `Kathikon.Report.queue_summary/1` with dashboard fields (`ui_counts`,
+  dynamic queues from storage) and delegates job control to `Kathikon.*`.
 
-  See `baoulo/prompts/dashboard.md` and `docs/management_api.md`.
+  See `docs/dashboard_spec.md` and `docs/management_api.md`.
 
   ## Examples
 
@@ -20,10 +19,34 @@ defmodule Kathikon.Dashboard do
       :ok = Kathikon.Dashboard.pause_all()
   """
 
-  alias Kathikon.{Config, Job, QueueControl, Storage}
+  alias Kathikon.{Config, Job, QueueControl, Report, Storage}
+
+  @type state_tab ::
+          :available
+          | :executing
+          | :retryable
+          | :completed
+          | :cancelled
+          | :dead
+          | :discarded
+
+  # Dialyzer: job map includes many struct fields; minimum key for contract is :attempt.
+  @type job_map :: %{attempt: non_neg_integer()}
+
+  @type fetch_result :: %{history: [map()], job: job_map()}
 
   @default_limit 50
   @default_offset 0
+
+  @state_tab_order [
+    :available,
+    :executing,
+    :retryable,
+    :completed,
+    :cancelled,
+    :dead,
+    :discarded
+  ]
 
   @state_tabs %{
     available: [:scheduled, :available],
@@ -40,7 +63,7 @@ defmodule Kathikon.Dashboard do
     scheduled: [:cancel, :discard],
     available: [:cancel, :discard],
     claimed: [:cancel, :discard],
-    running: [:discard],
+    running: [],
     waiting_for_children: [],
     retryable: [:cancel, :retry, :discard],
     completed: [:rerun, :purge],
@@ -53,20 +76,29 @@ defmodule Kathikon.Dashboard do
   @doc """
   Returns queue summary rows for the dashboard table.
 
-  Each row includes `counts`, `executing` (`:claimed` + `:running`),
+  Each row includes `counts`, `ui_counts`, `executing` (`:claimed` + `:running`),
   `failed` (`:failed` + `:dead`), `total`, and `paused`.
 
-  Includes queues seen in storage even when not in `config :kathikon, :queues`.
+  Builds on `Kathikon.Report.queue_summary/1` and includes queues seen in storage
+  even when not in `config :kathikon, :queues`.
   """
   @spec queue_summary(keyword()) :: {:ok, [map()]} | {:error, term()}
-  def queue_summary(_opts \\ []) do
-    with {:ok, jobs} <- Storage.list_jobs([]) do
+  def queue_summary(opts \\ []) do
+    with {:ok, base} <- Report.queue_summary(opts),
+         {:ok, jobs} <- Storage.list_jobs([]) do
+      base_by_queue = Map.new(base, &{&1.queue, &1})
       queues = all_queue_names(jobs)
 
       summaries =
         Enum.map(queues, fn queue ->
-          queue_jobs = Enum.filter(jobs, &(&1.queue == queue))
-          counts = count_by_state(queue_jobs)
+          row =
+            Map.get(base_by_queue, queue, %{
+              queue: queue,
+              paused: QueueControl.paused?(queue),
+              counts: %{}
+            })
+
+          counts = row.counts
 
           %{
             queue: queue,
@@ -99,23 +131,24 @@ defmodule Kathikon.Dashboard do
   """
   @spec list_jobs(keyword()) :: {:ok, map()} | {:error, term()}
   def list_jobs(opts \\ []) do
-    with {:ok, jobs} <- Storage.list_jobs(list_jobs_storage_opts(opts)) do
-      states = resolve_states(opts)
-      limit = Keyword.get(opts, :limit, @default_limit)
-      offset = Keyword.get(opts, :offset, @default_offset)
-      order = Keyword.get(opts, :order, :newest)
+    limit = Keyword.get(opts, :limit, @default_limit)
+    offset = Keyword.get(opts, :offset, @default_offset)
+    order = Keyword.get(opts, :order, :newest)
+    states = resolve_states(opts)
 
-      filtered =
-        jobs
-        |> filter_states(states)
-        |> sort_jobs(order)
+    page_opts =
+      []
+      |> maybe_put(:queue, Keyword.get(opts, :queue))
+      |> maybe_put(:states, if(states == [], do: nil, else: states))
+      |> Keyword.put(:limit, limit)
+      |> Keyword.put(:offset, offset)
+      |> Keyword.put(:order, order)
 
-      page = filtered |> Enum.drop(offset) |> Enum.take(limit)
-
+    with {:ok, %{jobs: jobs, total: total}} <- Storage.list_jobs_page(page_opts) do
       {:ok,
        %{
-         jobs: Enum.map(page, &job_row/1),
-         total: length(filtered),
+         jobs: Enum.map(jobs, &job_row/1),
+         total: total,
          limit: limit,
          offset: offset
        }}
@@ -127,7 +160,7 @@ defmodule Kathikon.Dashboard do
 
   The job is a plain map from `Kathikon.Job.to_map/1`.
   """
-  @spec fetch_job(String.t()) :: {:ok, map()} | {:error, term()}
+  @spec fetch_job(String.t()) :: {:ok, fetch_result()} | {:error, term()}
   def fetch_job(job_id) when is_binary(job_id) do
     with {:ok, job} <- Kathikon.fetch(job_id),
          {:ok, history} <- Kathikon.history(job_id) do
@@ -141,9 +174,8 @@ defmodule Kathikon.Dashboard do
     Map.get(@state_tabs, tab, [])
   end
 
-  @doc "Returns configured dashboard state tab names."
-  @spec state_tabs() :: [atom()]
-  def state_tabs, do: Map.keys(@state_tabs)
+  @doc "Returns configured dashboard state tab names in stable UI order."
+  def state_tabs, do: @state_tab_order
 
   @doc """
   Returns UI action atoms enabled for a job state.
@@ -167,14 +199,14 @@ defmodule Kathikon.Dashboard do
   @doc "Pauses every known queue."
   @spec pause_all() :: :ok
   def pause_all do
-    Enum.each(all_configured_queues(), &Kathikon.pause_queue/1)
+    Enum.each(all_known_queues(), &Kathikon.pause_queue/1)
     :ok
   end
 
   @doc "Resumes every known queue."
   @spec resume_all() :: :ok
   def resume_all do
-    Enum.each(all_configured_queues(), &Kathikon.resume_queue/1)
+    Enum.each(all_known_queues(), &Kathikon.resume_queue/1)
     :ok
   end
 
@@ -205,7 +237,7 @@ defmodule Kathikon.Dashboard do
         :dead ->
           Kathikon.discard_dead(job_id, reason)
 
-        state when state in [:failed, :retryable, :running, :available, :scheduled, :claimed] ->
+        state when state in [:failed, :retryable, :available, :scheduled, :claimed] ->
           Storage.discard_job(job_id, reason, %{})
 
         _ ->
@@ -279,7 +311,7 @@ defmodule Kathikon.Dashboard do
     * `:states` — defaults to `[:completed, :cancelled, :discarded]`
     * `:older_than` — `DateTime` — only delete when terminal timestamp is before this
 
-  Returns `{:ok, %{purged: count}}`.
+  Returns `{:ok, %{purged: count, errors: [{id, reason}]}}`.
   """
   @spec purge_jobs(keyword()) :: {:ok, map()} | {:error, term()}
   def purge_jobs(opts \\ []) do
@@ -287,15 +319,8 @@ defmodule Kathikon.Dashboard do
     older_than = Keyword.get(opts, :older_than)
 
     with {:ok, jobs} <- matching_jobs(Keyword.put(opts, :states, states)) do
-      purged =
-        jobs
-        |> Enum.filter(&purgeable?(&1, older_than))
-        |> Enum.reduce(0, fn job, count ->
-          Storage.delete(job.id)
-          count + 1
-        end)
-
-      {:ok, %{purged: purged}}
+      {purged, errors} = purge_matching_jobs(jobs, older_than)
+      {:ok, %{purged: purged, errors: errors}}
     end
   end
 
@@ -325,6 +350,9 @@ defmodule Kathikon.Dashboard do
     :ok
   end
 
+  defp maybe_put(opts, _key, nil), do: opts
+  defp maybe_put(opts, key, value), do: Keyword.put(opts, key, value)
+
   defp list_jobs_storage_opts(opts) do
     case Keyword.get(opts, :queue) do
       nil -> []
@@ -351,16 +379,26 @@ defmodule Kathikon.Dashboard do
     Enum.filter(jobs, &(&1.state in states))
   end
 
-  defp sort_jobs(jobs, :newest) do
-    Enum.sort_by(jobs, &job_sort_time/1, {:desc, DateTime})
+  defp purge_matching_jobs(jobs, older_than) do
+    jobs
+    |> Enum.filter(&purgeable?(&1, older_than))
+    |> Enum.reduce({0, []}, &accumulate_purge/2)
+    |> then(fn {purged, errors} -> {purged, Enum.reverse(errors)} end)
   end
 
-  defp sort_jobs(jobs, :oldest) do
-    Enum.sort_by(jobs, &job_sort_time/1, DateTime)
+  defp accumulate_purge(job, {count, err_list}) do
+    case delete_job(job.id) do
+      :ok -> {count + 1, err_list}
+      {:error, reason} -> {count, [{job.id, reason} | err_list]}
+    end
   end
 
-  defp job_sort_time(job) do
-    job.inserted_at || job.available_at || DateTime.utc_now()
+  defp delete_job(job_id) do
+    case Storage.delete(job_id) do
+      :ok -> :ok
+      {:error, _} = err -> err
+      other -> {:error, other}
+    end
   end
 
   defp job_row(%Job{} = job) do
@@ -418,14 +456,14 @@ defmodule Kathikon.Dashboard do
     |> Enum.sort()
   end
 
-  defp all_configured_queues, do: Config.queue_names()
-
-  defp count_by_state(jobs) do
-    jobs
-    |> Enum.group_by(& &1.state)
-    |> Enum.map(fn {state, list} -> {state, length(list)} end)
-    |> Map.new()
+  defp all_known_queues do
+    case Storage.list_jobs([]) do
+      {:ok, jobs} -> all_queue_names(jobs)
+      {:error, _} -> all_configured_queues()
+    end
   end
+
+  defp all_configured_queues, do: Config.queue_names()
 
   defp in_flight(counts) do
     Map.get(counts, :running, 0) + Map.get(counts, :claimed, 0)

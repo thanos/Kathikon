@@ -91,6 +91,7 @@ defmodule Kathikon.TestSupport do
     Mox.stub(@mock, :retry_job, fn id, _ -> {:ok, stub_job(id, state: :available)} end)
     Mox.stub(@mock, :move_to_dead_letter, fn id, _, _ -> {:ok, stub_job(id, state: :dead)} end)
     Mox.stub(@mock, :list_jobs, fn _ -> {:ok, []} end)
+    Mox.stub(@mock, :list_jobs_page, fn _ -> {:ok, %{jobs: [], total: 0}} end)
     Mox.stub(@mock, :list_dead_jobs, fn _ -> {:ok, []} end)
     Mox.stub(@mock, :insert_history_event, fn _, _ -> :ok end)
     Mox.stub(@mock, :list_history, fn _ -> {:ok, []} end)

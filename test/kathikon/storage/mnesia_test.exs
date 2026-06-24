@@ -115,6 +115,38 @@ defmodule Kathikon.Storage.MnesiaTest do
       assert Enum.all?(dead_jobs, &(&1.state == :dead))
     end
 
+    test "list_jobs_page filters, sorts, and paginates in storage" do
+      base = DateTime.utc_now()
+
+      for i <- 0..4 do
+        at = DateTime.add(base, i, :second)
+
+        job =
+          available_job()
+          |> Map.put(:state, :completed)
+          |> Map.put(:inserted_at, at)
+          |> Map.put(:completed_at, at)
+
+        {:ok, _} = Storage.insert(job)
+      end
+
+      {:ok, _} = Storage.insert(available_job())
+
+      assert {:ok, %{jobs: page, total: 5}} =
+               Storage.list_jobs_page(
+                 states: [:completed],
+                 limit: 2,
+                 offset: 1,
+                 order: :oldest
+               )
+
+      assert length(page) == 2
+      assert Enum.all?(page, &(&1.state == :completed))
+
+      [first, second] = page
+      assert DateTime.compare(first.inserted_at, second.inserted_at) != :gt
+    end
+
     test "update_job accepts string keys" do
       {:ok, inserted} = Storage.insert(available_job())
 

@@ -52,6 +52,8 @@ defmodule Kathikon.Storage do
   @callback cancel_job(String.t(), term(), map()) ::
               {:ok, map()} | {:ok, Job.t()} | {:error, term()}
   @callback list_jobs(keyword()) :: {:ok, [map()]} | {:ok, [Job.t()]} | {:error, term()}
+  @callback list_jobs_page(keyword()) ::
+              {:ok, %{jobs: [map()] | [Job.t()], total: non_neg_integer()}} | {:error, term()}
   @callback insert_history_event(String.t(), map()) :: :ok | {:error, term()}
   @callback list_history(String.t()) :: {:ok, [map()]} | {:error, term()}
   @callback move_to_dead_letter(String.t(), term(), map()) ::
@@ -80,7 +82,8 @@ defmodule Kathikon.Storage do
     promote_scheduled: 1,
     prunable_jobs: 1,
     delete: 1,
-    all: 0
+    all: 0,
+    list_jobs_page: 1
   ]
 
   @doc """
@@ -229,6 +232,17 @@ defmodule Kathikon.Storage do
   def list_jobs(opts \\ []), do: backend_module().list_jobs(opts)
 
   @doc false
+  def list_jobs_page(opts \\ []) do
+    mod = backend_module()
+
+    if function_exported?(mod, :list_jobs_page, 1) do
+      mod.list_jobs_page(opts)
+    else
+      list_jobs_page_fallback(opts)
+    end
+  end
+
+  @doc false
   def insert_history_event(job_id, event),
     do: backend_module().insert_history_event(job_id, event)
 
@@ -241,6 +255,39 @@ defmodule Kathikon.Storage do
 
   @doc false
   def list_dead_jobs(opts \\ []), do: backend_module().list_dead_jobs(opts)
+
+  defp list_jobs_page_fallback(opts) do
+    queue = Keyword.get(opts, :queue)
+    states = Keyword.get(opts, :states)
+    limit = Keyword.get(opts, :limit, 50)
+    offset = Keyword.get(opts, :offset, 0)
+    order = Keyword.get(opts, :order, :newest)
+
+    with {:ok, jobs} <- list_jobs(if queue, do: [queue: queue], else: []) do
+      filtered =
+        jobs
+        |> filter_jobs_by_states(states)
+        |> sort_jobs_for_page(order)
+
+      page = filtered |> Enum.drop(offset) |> Enum.take(limit)
+      {:ok, %{jobs: page, total: length(filtered)}}
+    end
+  end
+
+  defp filter_jobs_by_states(jobs, nil), do: jobs
+  defp filter_jobs_by_states(jobs, states), do: Enum.filter(jobs, &(&1.state in states))
+
+  defp sort_jobs_for_page(jobs, :newest) do
+    Enum.sort_by(jobs, &job_page_sort_time/1, {:desc, DateTime})
+  end
+
+  defp sort_jobs_for_page(jobs, :oldest) do
+    Enum.sort_by(jobs, &job_page_sort_time/1, DateTime)
+  end
+
+  defp job_page_sort_time(job) do
+    job.inserted_at || job.available_at || DateTime.utc_now()
+  end
 
   defp backend_module do
     Process.get(@storage_override) ||
